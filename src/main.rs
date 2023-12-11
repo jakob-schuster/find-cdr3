@@ -20,19 +20,6 @@ struct RefV {
     cys_index: usize
 }
 
-fn parse_reference(reference_fasta: String) -> Vec<String> {
-    let reader = bio::io::fasta::Reader::new(
-        BufReader::new(
-            File::open(reference_fasta).expect("Couldn't open reference!")));
-    
-    reader.records().into_iter().fold(Vec::new(), |mut seqs: Vec<String>, result| {
-        match result {
-            Ok(record) => {seqs.push(String::from_utf8(record.seq()[cmp::max(0,record.seq().len()-64)..].to_ascii_uppercase().to_vec()).expect("Bad sequence line!")); seqs}
-            Err(_) => panic!("Bad record!")
-        }
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,7 +76,6 @@ fn parse_reference_b(reference_fasta: String) -> Vec<RefV> {
     }).map(|seq| {RefV { seq: seq.clone(), cys_index: last_cys(seq.as_str()).expect("No Cys") } }).collect()
 }
 
-
 struct OutputRecord {
     name: String,
     seq: String,
@@ -102,47 +88,7 @@ impl fmt::Display for OutputRecord {
     }
 }
 
-fn find_cdr3(seq: &String, reference_seqs: &Vec<String>, edit_dist: u8) -> Option<Vec<u8>> {
-    // build ALL the myers matchers inside each iteration - bad?
-    let mut reference_myers: Vec<Myers> = reference_seqs.into_iter()
-        .map(|a| Myers::<u64>::new(a.as_str().as_bytes()))
-        .collect();
-    
-    // first map to all the variable regions. get the best match (compare by edit dist)
-    let matches = reference_myers.into_iter().map(|mut myers| {
-        myers.find_all_lazy(seq.as_bytes(), edit_dist).max_by_key(|&(_,dist)| dist)
-    });
-
-    let best_match = matches.fold(None, |prev, m| {
-        cmp::max(prev, m)
-    });
-
-    // currently hardcoded codon for the proteins
-    let mut cys_codon_myers = MyersBuilder::new().ambig(b'Y', b"AT").build_64(b"TGY");
-    let trp_codon_myers = Myers::<u64>::new(b"TGG");
-
-    match best_match {
-        None => None,
-        Some((end, edit_dist)) => {
-            match cys_codon_myers.find_all(&seq.as_bytes()[..end], 0).max_by_key(|&(start, end, _)| start) {
-                None => None,
-                Some(last_cys_match) => {
-                    let cys_start = last_cys_match.0;
-                    match trp_codon_myers.find_all_end(&seq.as_bytes()[cys_start..], 0).min_by_key(|&(end, _)| end) {
-                        None => None,
-                        Some(last_trp_match) => {
-                            let trp_end = last_trp_match.0 + cys_start;
-                            Some(seq.as_bytes()[(cys_start + 3)..trp_end].to_owned())
-                        }
-                    }
-                } 
-            }
-        }
-    }
-}
-
-
-fn find_cdr3_better(seq: &String, reference_seqs: &Vec<RefV>, edit_dist: u8) -> Option<Vec<u8>> {
+fn find_cdr3(seq: &String, reference_seqs: &Vec<RefV>, edit_dist: u8) -> Option<Vec<u8>> {
     // build ALL the myers matchers inside each iteration - bad?
     let reference_myers: Vec<(Myers, &usize)> = reference_seqs.into_iter()
         .map(|RefV { seq, cys_index } | (Myers::<u64>::new(seq.as_str().as_bytes()), cys_index))
@@ -238,8 +184,8 @@ fn parse_input(input_fasta: String, reference_seqs: &Vec<RefV>, edit_dist: u8) -
                     name: record.id().to_string(),
                     seq: String::from_utf8(record.seq().to_vec()).unwrap(),
                     cdr3_seq: match std::cmp::max(
-                        find_cdr3_better(&String::from_utf8(record.seq().to_owned()).unwrap(), &reference_seqs, edit_dist), 
-                        find_cdr3_better(&String::from_utf8(bio::alphabets::dna::revcomp(record.seq().to_owned())).unwrap(), &reference_seqs, edit_dist)) {
+                        find_cdr3(&String::from_utf8(record.seq().to_owned()).unwrap(), &reference_seqs, edit_dist), 
+                        find_cdr3(&String::from_utf8(bio::alphabets::dna::revcomp(record.seq().to_owned())).unwrap(), &reference_seqs, edit_dist)) {
 
                         None => String::new(),
                         Some(bytes) => {String::from_utf8(bytes.to_vec()).unwrap()}
@@ -265,7 +211,6 @@ fn print_output(output_csv: String, output_records: &Vec<OutputRecord>) {
 fn main() {
     let args = Args::parse();
 
-    // let reference_seqs = parse_reference(args.reference_fasta.clone());
     let reference_seqs_b = parse_reference_b(args.reference_fasta);
     let output_records = parse_input(args.input_fasta, &reference_seqs_b, 8);
 
