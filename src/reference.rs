@@ -2,9 +2,11 @@ use std::cmp;
 use std::fs::File;
 use std::io::BufReader;
 use bio;
+use bio::pattern_matching::myers::Myers;
 
 pub(crate) struct RefV {
     pub(crate) seq: String,
+    pub(crate) myers: Myers,
     pub(crate) cys_index: usize
 }
 
@@ -58,8 +60,19 @@ pub(crate) fn parse_reference(reference_fasta: String) -> Vec<RefV> {
 
     reader.records().into_iter().map(|result| {
         match result {
-            Ok(record) => {String::from_utf8(record.seq()[cmp::max(0,record.seq().len()-63)..].to_ascii_uppercase().to_vec()).expect("Bad sequence line!")}
+            Ok(record) => {
+                String::from_utf8(
+                    record.seq()[cmp::max(0,record.seq().len()-63)..]
+                        .to_ascii_uppercase().to_vec())
+                            .expect("Bad sequence line!")
+            }
             Err(_) => panic!("Bad record!")
         }
-    }).map(|seq| {RefV { seq: seq.clone(), cys_index: last_cys(seq.as_str()).expect("No Cys") } }).collect()
+    }).map(|seq| {
+        RefV { 
+            seq: seq.clone(), 
+            myers: Myers::<u64>::new(seq.as_bytes()),
+            cys_index: last_cys(seq.as_str()).expect("No Cys")
+        }
+    }).collect()
 }
