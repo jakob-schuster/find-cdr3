@@ -1,4 +1,4 @@
-use std::{cmp, io::BufReader, fs::File, collections::HashMap};
+use std::{cmp, io::BufReader, fs::File, collections::{HashMap, HashSet}};
 
 use bio::{io::fasta::{Record, Records}, pattern_matching::myers::Myers, alignment::Alignment};
 use itertools::Itertools;
@@ -137,6 +137,7 @@ pub fn optimise_refs(reference_seqs: &Vec<RefV>, records: Records<BufReader<BufR
 
     let sorted_map = map.into_iter()
         .sorted_by(|a@(_, edit_a), b@(_, edit_b)| {edit_a.cmp(edit_b)})
+        .rev()
         .collect_vec();
 
     for (k, v) in &sorted_map {
@@ -144,8 +145,17 @@ pub fn optimise_refs(reference_seqs: &Vec<RefV>, records: Records<BufReader<BufR
     }
 
     // convert the map into a sorted list
-    sorted_map.into_iter()
+    let mut best = sorted_map.into_iter()
         .map(|(ref_v, edit_dist)| { ref_v })
-        .rev()
-        .collect_vec()
+        .collect_vec();
+
+    let mut rest = reference_seqs.into_iter()
+        .filter(|&a| -> bool {best.contains(a)})
+        .map(|a| a.to_owned())
+        .collect_vec();
+
+    best.append(&mut rest);
+    
+    // best
+    best.into_iter().take(15).collect_vec()
 }

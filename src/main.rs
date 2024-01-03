@@ -23,9 +23,9 @@ struct Args {
     sample_size: usize,
     #[arg(short,long, default_value_t = 500000)]
     parallel_chunk_size: usize,
-    #[arg(short,long, default_value_t = true)]
-    deterministic: bool,
-    #[arg(short,long, default_value_t = 20)]
+    #[arg(short,long)]
+    nondeterministic: bool,
+    #[arg(short,long, default_value_t = 10)]
     edit_dist: u8,
 }
 
@@ -81,8 +81,14 @@ fn main() {
         bunch.collect_vec().into_par_iter().map(|result| {
             match result {
                 Err(_) => panic!("Bad record!"),
-                Ok(record) => 
-                    find_cdr3::det::parse_one_input(record, &optimised_reference_seqs, args.edit_dist)
+                Ok(record) => if !args.nondeterministic {
+                    find_cdr3::det::parse_one_input_par(
+                        record, &optimised_reference_seqs, args.edit_dist)
+                } else {
+                    find_cdr3::nondet::parse_one_input_par(
+                        record, &optimised_reference_seqs, args.edit_dist)
+                }
+
             }
         }).collect_into_vec(&mut outs);
 

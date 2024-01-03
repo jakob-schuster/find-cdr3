@@ -1,4 +1,5 @@
 use bio::{alignment::{Alignment, AlignmentOperation}, pattern_matching::myers::Myers, io::fasta::Record};
+use rayon::iter::{IntoParallelIterator, ParallelIterator, IndexedParallelIterator};
 
 use crate::reference;
 
@@ -24,7 +25,7 @@ pub(crate) fn find_cdr3(
             let mut aln = Alignment::default();
             matches.alignment_at(end, &mut aln);
             first_match = Some((end, dist, cys_index, aln));
-            break;
+            // break;
         }
     }
     
@@ -137,5 +138,58 @@ pub(crate) fn parse_one_input(
                 cdr3_seq: String::new()
             }
         }
+    }
+}
+
+pub(crate) fn parse_one_input_par(
+    record: Record,
+    reference_seqs: &Vec<reference::RefV>,
+    edit_dist: u8
+) -> OutputRecord {
+    let mut vec = Vec::new();
+    
+    vec![record.seq(), &bio::alphabets::dna::revcomp(record.seq())]
+        .into_par_iter()
+        .map(|seq| {
+            find_cdr3(
+                seq, 
+                &reference_seqs.to_owned(),
+                edit_dist
+            )
+        })
+        .collect_into_vec(&mut vec);
+
+    if let [forward, reverse] = &vec[..] {
+        match (&forward, &reverse) {
+            // neither was successful
+            (None, None) => OutputRecord {
+                name: String::from(record.id()),
+                seq: String::from_utf8(record.seq().to_vec()).unwrap(),
+                cdr3_seq: String::new()
+            },
+    
+            // forwards was successful
+            (Some(seq), None) => OutputRecord { 
+                name: String::from(record.id()),
+                seq: String::from_utf8(record.seq().to_vec()).unwrap(),
+                cdr3_seq: String::from_utf8(seq.to_owned()).unwrap()
+            },
+    
+            // reverse was successful
+            (None, Some(seq)) => OutputRecord { 
+                name: String::from(record.id()),
+                seq: String::from_utf8(bio::alphabets::dna::revcomp(record.seq())).unwrap(),
+                cdr3_seq: String::from_utf8(seq.to_owned()).unwrap()
+            },
+    
+            // both were successful - ambiguous
+            (Some(seq), Some(rev_seq)) => OutputRecord {
+                name: String::from(record.id()),
+                seq: String::from_utf8(record.seq().to_vec()).unwrap(),
+                cdr3_seq: String::new()
+            }
+        }
+    } else {
+        panic!("Thread problem")
     }
 }

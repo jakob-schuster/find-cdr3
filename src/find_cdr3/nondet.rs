@@ -1,6 +1,7 @@
 use std::{cmp, thread};
 
 use bio::{alignment::{Alignment, AlignmentOperation}, pattern_matching::myers::Myers, io::fasta::Record};
+use itertools::Itertools;
 use rayon::iter::{IntoParallelIterator, ParallelIterator, IndexedParallelIterator};
 
 use crate::reference;
@@ -24,27 +25,37 @@ pub(crate) fn parse_one_input(
         edit_dist
     );
 
-    if forward > reverse {
-        OutputRecord { 
+    match (&forward, &reverse) {
+        // neither was successful
+        (None, None) => OutputRecord {
             name: String::from(record.id()),
             seq: String::from_utf8(record.seq().to_vec()).unwrap(),
-            cdr3_seq: String::from_utf8(forward.unwrap()).unwrap()
-        }
-    } else if reverse < forward {
-        OutputRecord { 
+            cdr3_seq: String::new()
+        },
+
+        // forwards was successful
+        (Some(seq), None) => OutputRecord { 
             name: String::from(record.id()),
-            seq: String::from_utf8(bio::alphabets::dna::revcomp(
-                record.seq())).unwrap(),
-            cdr3_seq: String::from_utf8(reverse.unwrap()).unwrap()
-        }
-    } else {
-        OutputRecord {
+            seq: String::from_utf8(record.seq().to_vec()).unwrap(),
+            cdr3_seq: String::from_utf8(seq.to_owned()).unwrap()
+        },
+
+        // reverse was successful
+        (None, Some(seq)) => OutputRecord { 
+            name: String::from(record.id()),
+            seq: String::from_utf8(bio::alphabets::dna::revcomp(record.seq())).unwrap(),
+            cdr3_seq: String::from_utf8(seq.to_owned()).unwrap()
+        },
+
+        // both were successful - ambiguous
+        (Some(seq), Some(rev_seq)) => OutputRecord {
             name: String::from(record.id()),
             seq: String::from_utf8(record.seq().to_vec()).unwrap(),
             cdr3_seq: String::new()
         }
     }
 }
+
 pub(crate) fn parse_one_input_par(
     record: Record,
     reference_seqs: &Vec<reference::RefV>,
@@ -56,7 +67,7 @@ pub(crate) fn parse_one_input_par(
         .into_par_iter()
         .map(|seq| {
             find_cdr3_par(
-                record.seq(), 
+                seq, 
                 &reference_seqs.to_owned(),
                 edit_dist
             )
@@ -64,21 +75,30 @@ pub(crate) fn parse_one_input_par(
         .collect_into_vec(&mut vec);
 
     if let [forward, reverse] = &vec[..] {
-        if *forward > *reverse {
-            OutputRecord { 
+        match (&forward, &reverse) {
+            // neither was successful
+            (None, None) => OutputRecord {
                 name: String::from(record.id()),
                 seq: String::from_utf8(record.seq().to_vec()).unwrap(),
-                cdr3_seq: String::from_utf8(forward.to_owned().unwrap()).unwrap()
-            }
-        } else if *reverse < *forward {
-            OutputRecord { 
+                cdr3_seq: String::new()
+            },
+    
+            // forwards was successful
+            (Some(seq), None) => OutputRecord { 
                 name: String::from(record.id()),
-                seq: String::from_utf8(bio::alphabets::dna::revcomp(
-                    record.seq())).unwrap(),
-                cdr3_seq: String::from_utf8(reverse.to_owned().unwrap()).unwrap()
-            }
-        } else {
-            OutputRecord {
+                seq: String::from_utf8(record.seq().to_vec()).unwrap(),
+                cdr3_seq: String::from_utf8(seq.to_owned()).unwrap()
+            },
+    
+            // reverse was successful
+            (None, Some(seq)) => OutputRecord { 
+                name: String::from(record.id()),
+                seq: String::from_utf8(bio::alphabets::dna::revcomp(record.seq())).unwrap(),
+                cdr3_seq: String::from_utf8(seq.to_owned()).unwrap()
+            },
+    
+            // both were successful - ambiguous
+            (Some(seq), Some(rev_seq)) => OutputRecord {
                 name: String::from(record.id()),
                 seq: String::from_utf8(record.seq().to_vec()).unwrap(),
                 cdr3_seq: String::new()
