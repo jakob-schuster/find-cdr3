@@ -12,21 +12,31 @@ mod find_v;
 
 #[derive(Parser,Debug)]
 struct Args {
-    #[arg(short,long)]
+    /// Input fasta file of immunoglobin sequences.
+    #[arg(short,long, )]
     input_fasta: String,
+    /// Reference fasta of different V-gene sequences. The Cys codon near the end of the V-gene sequence marks the start of the CDR3.
     #[arg(short,long)]
     reference_fasta: String,
+    /// Output CSV.
     #[arg(short,long)]
     output_csv: String,
 
+    /// Size of pre-processing sample, pre-processed to find the most common reference sequences.
     #[arg(short,long, default_value_t = 10000)]
     sample_size: usize,
+    /// Size of each chunk of reads to process in parallel.
     #[arg(short,long, default_value_t = 500000)]
     parallel_chunk_size: usize,
-    #[arg(short,long)]
+    /// Experimental. Use the non-deterministic approach to searching. No performance gains yet.
+    #[arg(short,long,hide=true)]
     nondeterministic: bool,
+    /// Edit distance used for reference sequences.
     #[arg(short,long, default_value_t = 10)]
     edit_dist: u8,
+    /// FR4 region. Located just after the CDR3.
+    #[arg(short,long, default_value_t = String::from("TGGGGCAAAGGGACCCAGGTCAC"))]
+    fr4: String,
 }
 
 mod output {
@@ -83,12 +93,11 @@ fn main() {
                 Err(_) => panic!("Bad record!"),
                 Ok(record) => if !args.nondeterministic {
                     find_cdr3::det::parse_one_input_par(
-                        record, &optimised_reference_seqs, args.edit_dist)
+                        record, &optimised_reference_seqs, args.edit_dist, args.fr4.as_bytes())
                 } else {
                     find_cdr3::nondet::parse_one_input_par(
-                        record, &optimised_reference_seqs, args.edit_dist)
+                        record, &optimised_reference_seqs, args.edit_dist, args.fr4.as_bytes())
                 }
-
             }
         }).collect_into_vec(&mut outs);
 

@@ -11,18 +11,21 @@ use super::OutputRecord;
 pub(crate) fn parse_one_input(
     record: Record,
     reference_seqs: &Vec<reference::RefV>,
-    edit_dist: u8
+    edit_dist: u8,
+    fr4: &[u8]
 ) -> OutputRecord {
     let forward = find_cdr3(
         record.seq(), 
         &reference_seqs,
-        edit_dist
+        edit_dist,
+        fr4
     );
 
     let reverse = find_cdr3(
         &bio::alphabets::dna::revcomp(record.seq()),
         &reference_seqs,
-        edit_dist
+        edit_dist,
+        fr4
     );
 
     match (&forward, &reverse) {
@@ -59,7 +62,8 @@ pub(crate) fn parse_one_input(
 pub(crate) fn parse_one_input_par(
     record: Record,
     reference_seqs: &Vec<reference::RefV>,
-    edit_dist: u8
+    edit_dist: u8,
+    fr4: &[u8]
 ) -> OutputRecord {
     let mut vec = Vec::new();
     
@@ -69,7 +73,8 @@ pub(crate) fn parse_one_input_par(
             find_cdr3_par(
                 seq, 
                 &reference_seqs.to_owned(),
-                edit_dist
+                edit_dist,
+                fr4
             )
         })
         .collect_into_vec(&mut vec);
@@ -110,7 +115,7 @@ pub(crate) fn parse_one_input_par(
 }
 
 pub(crate) fn find_cdr3(
-    seq: &[u8], reference_seqs: &Vec<reference::RefV>, edit_dist: u8
+    seq: &[u8], reference_seqs: &Vec<reference::RefV>, edit_dist: u8, fr4: &[u8]
 ) -> Option<Vec<u8>> {
     // first map to all the variable regions. get the best match (compare by edit dist)
     let v_matches = reference_seqs.into_iter()
@@ -183,7 +188,7 @@ pub(crate) fn find_cdr3(
     });
 
     // currently hardcoded codon for the fr4
-    let mut fr4_imgt_myers = Myers::<u64>::new(b"TGGGGCAAAGGGACCCAGGTCAC");
+    let mut fr4_imgt_myers = Myers::<u64>::new(fr4);
 
     match v_best_match {
         None => None,
@@ -211,7 +216,7 @@ pub(crate) fn find_cdr3(
 }
 
 pub(crate) fn find_cdr3_par(
-    seq: &[u8], reference_seqs: &Vec<reference::RefV>, edit_dist: u8
+    seq: &[u8], reference_seqs: &Vec<reference::RefV>, edit_dist: u8, fr4: &[u8]
 ) -> Option<Vec<u8>> {
     // first map to all the variable regions. get the best match (compare by edit dist)
     let v_matches = reference_seqs.into_par_iter()
@@ -284,7 +289,7 @@ pub(crate) fn find_cdr3_par(
     });
 
     // currently hardcoded codon for the fr4
-    let mut fr4_imgt_myers = Myers::<u64>::new(b"TGGGGCAAAGGGACCCAGGTCAC");
+    let mut fr4_imgt_myers = Myers::<u64>::new(fr4);
 
     match v_best_match {
         None => None,

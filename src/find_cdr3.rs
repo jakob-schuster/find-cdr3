@@ -38,7 +38,8 @@ pub mod nondet;
 pub(crate) fn parse_input(
     input_fasta: &str, 
     reference_seqs: &Vec<reference::RefV>, 
-    edit_dist: u8
+    edit_dist: u8,
+    fr4: &[u8]
 ) -> Vec<OutputRecord> {
     let reader = bio::io::fasta::Reader::new(
         BufReader::new(
@@ -50,7 +51,8 @@ pub(crate) fn parse_input(
                 let forward = det::find_cdr3(
                     record.seq(), 
                     &reference_seqs, 
-                    edit_dist
+                    edit_dist,
+                    fr4
                 );
                 
                 if let Some(seq) = forward {
@@ -63,7 +65,8 @@ pub(crate) fn parse_input(
                     let reverse = det::find_cdr3(
                         &bio::alphabets::dna::revcomp(record.seq()),
                         &reference_seqs, 
-                        edit_dist
+                        edit_dist,
+                        fr4
                     );
 
                     if let Some(seq) = reverse {

@@ -6,7 +6,7 @@ use crate::reference;
 use super::OutputRecord;
 
 pub(crate) fn find_cdr3(
-    seq: &[u8], reference_seqs: &Vec<reference::RefV>, edit_dist: u8
+    seq: &[u8], reference_seqs: &Vec<reference::RefV>, edit_dist: u8, fr4: &[u8]
 ) -> Option<Vec<u8>> {
     let mut first_match = None;
     for reference::RefV { seq: ref_seq, myers, cys_index } in reference_seqs {
@@ -71,7 +71,7 @@ pub(crate) fn find_cdr3(
     };
 
     // currently hardcoded codon for the fr4
-    let mut fr4_imgt_myers = Myers::<u64>::new(b"TGGGGCAAAGGGACCCAGGTCAC");
+    let mut fr4_imgt_myers = Myers::<u64>::new(fr4);
 
     match a {
         None => None,
@@ -101,12 +101,14 @@ pub(crate) fn find_cdr3(
 pub(crate) fn parse_one_input(
     record: Record,
     reference_seqs: &Vec<reference::RefV>,
-    edit_dist: u8
+    edit_dist: u8,
+    fr4: &[u8]
 ) -> OutputRecord {
     let forward = find_cdr3(
         record.seq(), 
         &reference_seqs,
-        edit_dist
+        edit_dist,
+        fr4
     );
 
     if let Some(seq) = forward {
@@ -119,7 +121,8 @@ pub(crate) fn parse_one_input(
         let reverse = find_cdr3(
             &bio::alphabets::dna::revcomp(record.seq()),
             &reference_seqs,
-            edit_dist
+            edit_dist,
+            fr4
         );
 
         if let Some(seq) = reverse {
@@ -144,7 +147,8 @@ pub(crate) fn parse_one_input(
 pub(crate) fn parse_one_input_par(
     record: Record,
     reference_seqs: &Vec<reference::RefV>,
-    edit_dist: u8
+    edit_dist: u8,
+    fr4: &[u8]
 ) -> OutputRecord {
     let mut vec = Vec::new();
     
@@ -154,7 +158,8 @@ pub(crate) fn parse_one_input_par(
             find_cdr3(
                 seq, 
                 &reference_seqs.to_owned(),
-                edit_dist
+                edit_dist,
+                fr4
             )
         })
         .collect_into_vec(&mut vec);
