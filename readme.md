@@ -2,7 +2,7 @@
 
 A fast program for extracting CDR3 regions from immunoglobulin sequences. [igblast](https://www.ncbi.nlm.nih.gov/igblast/) also does this, but it's significantly slower, and also performs lots of operations that we're not interested in. This program is intended as a stripped-down, sped-up version of igblast.
 
-# Usage
+## Usage
 
 Provide `find-cdr3` with an input fasta, a reference fasta, and an output destination.
 
