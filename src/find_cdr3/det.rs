@@ -157,7 +157,7 @@ pub(crate) fn parse_one_input_par(
         .map(|seq| {
             find_cdr3(
                 seq, 
-                &reference_seqs.to_owned(),
+                &reference_seqs,
                 edit_dist,
                 fr4
             )

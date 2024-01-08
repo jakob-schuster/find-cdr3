@@ -1,8 +1,8 @@
 use core::{panic};
-use std::{io::{BufRead, Write, BufReader}, fs::File, string, collections::HashMap};
+use std::{io::{BufRead, Write, BufReader, stdout, stdin, Stdin, BufWriter}, fs::File, string, collections::HashMap, path::Path, ffi::OsStr};
 
-use bio::io::fasta::Record;
-use clap::{Parser, Arg};
+use bio::{io::fasta::Record, pattern_matching::myers::Myers};
+use clap::{Parser, Arg, ValueHint};
 use itertools::Itertools;
 use rayon::iter::{IntoParallelIterator, ParallelIterator, IndexedParallelIterator};
 
@@ -11,22 +11,22 @@ mod find_cdr3;
 mod find_v;
 
 #[derive(Parser,Debug)]
-struct Args {
-    /// Input fasta file of immunoglobin sequences.
-    #[arg(short,long, )]
+pub struct Args {
+    /// Input fasta file of immunoglobin sequences. Reads from stdin if none is provided.
+    #[arg(short, long, default_value_t = String::from("stdin"))]
     input_fasta: String,
     /// Reference fasta of different V-gene sequences. The Cys codon near the end of the V-gene sequence marks the start of the CDR3.
     #[arg(short,long)]
     reference_fasta: String,
-    /// Output CSV.
-    #[arg(short,long)]
+    /// Output CSV file of reads and their CDR3s. Writes to stdout if none is provided.
+    #[arg(short,long, default_value_t = String::from("stdout"))]
     output_csv: String,
 
-    /// Size of pre-processing sample, pre-processed to find the most common reference sequences.
-    #[arg(short,long, default_value_t = 10000)]
+    /// Size of pre-processing sample, pre-processed to find the most common reference sequences. Not used currently.
+    #[arg(long, default_value_t = 10000, hide=true)]
     sample_size: usize,
     /// Size of each chunk of reads to process in parallel.
-    #[arg(short,long, default_value_t = 500000)]
+    #[arg(long, short='c',default_value_t = 500000)]
     parallel_chunk_size: usize,
     /// Experimental. Use the non-deterministic approach to searching. No performance gains yet.
     #[arg(short,long,hide=true)]
@@ -37,21 +37,75 @@ struct Args {
     /// FR4 region. Located just after the CDR3.
     #[arg(short,long, default_value_t = String::from("TGGGGCAAAGGGACCCAGGTCAC"))]
     fr4: String,
+    /// Omit the header from the output. Useful if you're piping into another program to do more processing.
+    #[arg(short='l', long,default_value_t = false)]
+    headerless: bool
+}
+
+mod input {
+    use std::{io::{BufRead, BufReader, stdin}, path::Path, fs::File, ffi::OsStr};
+
+    use crate::Args;
+
+    /// Checks the arguments, and either opens a file or reads from stdin
+    pub fn reader(args: &Args) -> Box<dyn BufRead> {
+        if args.input_fasta.eq("stdin") {
+            // just read straight from stdin
+            Box::new(BufReader::new(stdin()))
+        } else {
+            let path = Path::new(&args.input_fasta);
+            let file = match File::open(path) {
+                Ok(file) => file,
+                Err(_) => panic!("Couldn't open {}!", path.display()),
+            };
+
+            if path.extension() == Some(OsStr::new("gz")) {
+                Box::new(BufReader::new(
+                    flate2::read::MultiGzDecoder::new(file)))
+            } else {
+                Box::new(BufReader::new(file))
+            }
+        }
+    }
 }
 
 mod output {
+    use std::ffi::OsStr;
     use std::fs::File;
-    use std::io::Write;
+    use std::io::{Write, BufWriter, stdout};
+    use std::path::Path;
+    use crate::Args;
     use crate::find_cdr3::OutputRecord;
 
-    pub fn print_header(file: &mut File) {
-        write!(file, "id,sequence,cdr3_sequence\n")
+    pub fn print_header<T: Write>(output: &mut T) {
+        write!(output, "id,sequence,cdr3_sequence\n")
         .expect("Couldn't write header line to output!");
     }
     
-    pub fn print_one(output_file: &mut File, output_record: OutputRecord) {
-        write!(output_file, "{}\n", output_record)
+    pub fn print_one<T: Write>(output: &mut T, output_record: OutputRecord) {
+        write!(output, "{}\n", output_record)
             .expect("Couldn't write line to output!");
+    }
+
+    /// Checks the arguments, and either opens a file or writes to stdout
+    pub fn writer(args: &Args) -> Box<dyn Write> {
+        if args.output_csv.eq("stdout") {
+            // just read straight from stdin
+            Box::new(BufWriter::new(stdout()))
+        } else {
+            let path = Path::new(&args.output_csv);
+            let file = match File::create(path) {
+                Ok(file) => file,
+                Err(_) => panic!("Couldn't open {}!", path.display()),
+            };
+
+            if path.extension() == Some(OsStr::new("gz")) {
+                Box::new(BufWriter::new(
+                    flate2::write::GzEncoder::new(file, flate2::Compression::default())))
+            } else {
+                Box::new(BufWriter::new(file))
+            }
+        }
     }
 }
 
@@ -62,29 +116,40 @@ fn main() {
 
     // collect all the reference seqs
     let reference_seqs = reference::parse_reference(&args.reference_fasta);
-    
+
+    // open the files to read and write from
+    let records = bio::io::fasta::Reader::new(input::reader(&args))
+        .records();
+
     // open the files to read and write from
     let records = bio::io::fasta::Reader::new(
         BufReader::new(
             File::open(&args.input_fasta)
                 .expect("Couldn't open input!")))
                 .records();
-    let mut output_csv_file = File::create(args.output_csv)
+    let mut output_csv_file = File::create(&args.output_csv)
         .expect("Couldn't create output file!");
     output::print_header(&mut output_csv_file);
 
+    
     // optimise the reference seqs list
-    let optimised_reference_seqs = find_v::optimise_refs(
+    let (optimised_reference_seqs, rest) = find_v::optimise_refs(
         &reference_seqs, 
-        bio::io::fasta::Reader::new(
-            BufReader::new(
-                File::open(&args.input_fasta)
-                    .expect("Couldn't open input!")))
-            .records(), args.sample_size, args.parallel_chunk_size, args.edit_dist);
+        bio::io::fasta::Reader::new(input::reader(&args)).records(),
+        args.sample_size, args.parallel_chunk_size, args.edit_dist);
+    // let optimised_reference_seqs = reference_seqs;
+    
+    let mut output_csv_file = output::writer(&args);
+
+    // print the header unless the user specifies not to
+    if !args.headerless {
+        output::print_header(&mut output_csv_file);
+    }
+
+    let fr4 = Myers::<u64>::new(args.fr4.as_bytes());
 
     // go through each result and print to output while you go 
     // to avoid collecting data in memory
-    
     for bunch in &records.chunks(args.parallel_chunk_size) {
         let mut outs = Vec::new();
         
@@ -95,8 +160,10 @@ fn main() {
                     find_cdr3::det::parse_one_input_par(
                         record, &optimised_reference_seqs, args.edit_dist, args.fr4.as_bytes())
                 } else {
+                    // find_cdr3::nondet::parse_one_input_par_opt(
+                    //     record, &optimised_reference_seqs, &reference_seqs, args.edit_dist, &fr4)
                     find_cdr3::nondet::parse_one_input_par(
-                        record, &optimised_reference_seqs, args.edit_dist, args.fr4.as_bytes())
+                        record, &optimised_reference_seqs, args.edit_dist, &args.fr4.as_bytes())
                 }
             }
         }).collect_into_vec(&mut outs);
@@ -105,60 +172,4 @@ fn main() {
             output::print_one(&mut output_csv_file, output)
         }
     }
-
-    // for result in records {
-    //     match result {
-    //         Err(_) => panic!("Bad record!"),
-    //         Ok(record) => {
-    //             output::print_one(
-    //                 &mut output_csv_file,
-    //                 find_cdr3::det::parse_one_input(record, &optimised_reference_seqs, 20)
-    //             );
-    //         }
-    //     }
-    // }
-}
-
-fn mot_main() {
-    // get the arguments from the command line
-    let args = Args::parse();
-
-    // collect all the reference seqs
-    let reference_seqs = reference::parse_reference(&args.reference_fasta);
-    
-    // open the files to read and write from
-    let records = bio::io::fasta::Reader::new(
-        BufReader::new(
-            File::open(args.input_fasta)
-                .expect("Couldn't open input!")))
-                .records();
-    let mut output_csv_file = File::create(args.output_csv)
-        .expect("Couldn't create output file!");
-    output::print_header(&mut output_csv_file);
-
-}
-
-struct Feature<'a> {
-    seq: &'a str,
-    
-    start: usize,
-    end: usize,
-}
-
-struct ImportantExcerpt<'a> {
-    part: &'a str
-}
-
-/// Quick function just for fun
-/// # Examples
-/// ```
-/// let s = String::from("hello");
-/// let b = quick(s);
-/// ```
-fn quick<'a>(inp: &'a String) -> ImportantExcerpt<'a> {
-    let impo = ImportantExcerpt {
-        part: &inp[1..]
-    };
-
-    impo
 }

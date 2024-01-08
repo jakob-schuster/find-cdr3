@@ -288,9 +288,6 @@ pub(crate) fn find_cdr3_par(
         })
     });
 
-    // currently hardcoded codon for the fr4
-    let mut fr4_imgt_myers = Myers::<u64>::new(fr4);
-
     match v_best_match {
         None => None,
         Some((cys_start_seq, cys_end_seq)) => {
@@ -300,7 +297,7 @@ pub(crate) fn find_cdr3_par(
                 //     seq.to_ascii_uppercase(), seq.len(), cys_start_seq, cys_end_seq);
                 None
             } else {
-                match fr4_imgt_myers
+                match Myers::<u64>::new(fr4)
                     .find_all(&seq[cys_end_seq..], 3)
                     .min_by_key(|&(start, _, _)| start) {
                         None => None,

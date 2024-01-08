@@ -1,4 +1,4 @@
-use std::{cmp, io::BufReader, fs::File, collections::{HashMap, HashSet}};
+use std::{cmp, io::{BufReader, BufRead}, fs::File, collections::{HashMap, HashSet}};
 
 use bio::{io::fasta::{Record, Records}, pattern_matching::myers::Myers, alignment::Alignment};
 use itertools::Itertools;
@@ -107,7 +107,7 @@ pub(crate) fn parse_one_lazy(
     return None
 }
 
-pub fn optimise_refs(reference_seqs: &Vec<RefV>, records: Records<BufReader<BufReader<File>>>, sample_size: usize, parallel_chunk_size: usize, edit_dist: u8) -> Vec<RefV> {
+pub fn optimise_refs(reference_seqs: &Vec<RefV>, records: bio::io::fasta::Records<BufReader<Box<dyn BufRead>>>, sample_size: usize, parallel_chunk_size: usize, edit_dist: u8) -> (Vec<RefV>, Vec<RefV>) {
     // go through the records populating a counts map
     let mut map: HashMap<reference::RefV, usize> = HashMap::new();
 
@@ -149,6 +149,7 @@ pub fn optimise_refs(reference_seqs: &Vec<RefV>, records: Records<BufReader<BufR
         .map(|(ref_v, edit_dist)| { ref_v })
         .collect_vec();
 
+
     let mut rest = reference_seqs.into_iter()
         .filter(|&a| -> bool {best.contains(a)})
         .map(|a| a.to_owned())
@@ -157,5 +158,5 @@ pub fn optimise_refs(reference_seqs: &Vec<RefV>, records: Records<BufReader<BufR
     best.append(&mut rest);
     
     // best
-    best.into_iter().take(15).collect_vec()
+    (best.clone().into_iter().take(10).collect_vec(), best.into_iter().dropping(10).collect_vec())
 }
