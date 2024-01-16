@@ -35,5 +35,5 @@ jobs:
         with:
           RUSTTARGET: ${{ matrix.target }}
           ARCHIVE_TYPES: ${{ matrix.archive }}
-          PRE_BUILD: "pre_build.sh"
-          STATIC_LINKING: false
+          PRE_BUILD: pre_build.sh
+          STATIC_LINKING: true
