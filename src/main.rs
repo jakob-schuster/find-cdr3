@@ -1,8 +1,5 @@
-use core::{panic};
-use std::{io::{BufRead, Write, BufReader, stdout, stdin, Stdin, BufWriter}, fs::File, string, collections::HashMap, path::Path, ffi::OsStr};
-
-use bio::{io::fasta::Record, pattern_matching::myers::Myers, alignment::{Alignment, AlignmentOperation}};
-use clap::{Parser, Arg, ValueHint};
+use bio::{pattern_matching::myers::Myers, alignment::AlignmentOperation};
+use clap::Parser;
 use itertools::Itertools;
 use rayon::iter::{IntoParallelIterator, ParallelIterator, IndexedParallelIterator};
 
@@ -32,9 +29,6 @@ pub struct Args {
     /// Size of each chunk of reads to process in parallel.
     #[arg(long, short='c',default_value_t = 500000)]
     parallel_chunk_size: usize,
-    /// Experimental. Use the non-deterministic approach to searching. No performance gains yet.
-    #[arg(short,long,hide=true)]
-    nondeterministic: bool,
     /// Edit distance used for reference sequences.
     #[arg(short,long, default_value_t = 20)]
     edit_dist: u8,
@@ -126,7 +120,7 @@ fn main() {
         .records();
     
     // optimise the reference seqs list
-    let (optimised_reference_seqs, _rest) = find_v::optimise_refs(
+    let (optimised_reference_seqs, _rest) = reference::optimise_refs(
         &reference_seqs, 
         bio::io::fasta::Reader::new(input::reader(&args)).records(),
         args.sample_size, args.parallel_chunk_size, args.edit_dist, args.reference_size);
@@ -141,21 +135,13 @@ fn main() {
     let fr4 = Myers::<u64>::new(args.fr4.as_bytes());
 
     // select a parsing function based on the nondeterminism parameter
-    let parse_one = |record| if !args.nondeterministic {
-        find_cdr3::det::parse_one_input_par(
-            record, 
-            &optimised_reference_seqs, 
-            args.edit_dist, 
-            args.fr4.as_bytes()
-        )
-    } else {
-        find_cdr3::nondet::parse_one_input(
+    let parse_one = |record|
+        find_cdr3::parse_one_input(
             record, 
             &optimised_reference_seqs, 
             args.edit_dist, 
             &fr4
-        )
-    };
+        );
 
     // go through each result and print to output while you go 
     // to avoid collecting data in memory
@@ -184,68 +170,4 @@ fn to_char(op: &AlignmentOperation) -> char {
         AlignmentOperation::Xclip(_) => 'x',
         AlignmentOperation::Yclip(_) => 'y',
     }
-}
-
-fn find_index(ops: &[AlignmentOperation], ref_index: usize) -> Option<usize> {
-    let mut seq_index = None;
-    let (mut seq_i, mut ref_i) = (0, 0);
-
-    for op in ops {
-        if ref_i == ref_index {
-            seq_index = Some(seq_i);
-            // break;
-        }
-
-        match op {
-            AlignmentOperation::Del => { seq_i += 1 },
-            AlignmentOperation::Ins => { ref_i += 1 },
-            AlignmentOperation::Match => { seq_i += 1; ref_i += 1 },
-            AlignmentOperation::Subst => { seq_i += 1; ref_i += 1 },
-            AlignmentOperation::Xclip(_) => panic!("Xclip"),
-            AlignmentOperation::Yclip(_) => panic!("Yclip")
-        }
-    }
-    
-    seq_index
-}
-
-fn not_main() {
-    let seq = b"
-AAAATGGGAAGAGTCGT";
-
-    let pattern = b"AGGTGGAAG";
-    let tgg_end_pos = 6;
-
-    let mut myers = Myers::<u64>::new(pattern);
-
-    let mut matches = myers.find_all_lazy(seq, 4);
-    let best_match = 
-        matches.by_ref().min_by_key(|&(_, dist)| dist);
-
-    match best_match {
-        Some((end, dist)) => {
-            let mut aln = Alignment::default();
-            matches.alignment_at(end, &mut aln);
-            let ops = aln.operations;
-            
-            let ops_string: String = ops.clone().into_iter().map(|op| to_char(&op)).collect();
-            let index = find_index(&ops[..], tgg_end_pos);
-
-            match index {
-                Some(i) => {
-                    println!("bit was {} in orig. now it's {}", 
-                        String::from_utf8(pattern[tgg_end_pos..].to_vec()).expect("aa"), 
-                        String::from_utf8(seq[i+aln.ystart..].to_vec()).expect("aa")
-                    );
-                    println!("ystart {} in {}", aln.ystart, ops_string);
-                }
-            None => todo!(),
-            }
-
-
-        },
-        None => todo!(),
-    }
-    
-    println!("up to here");
 }

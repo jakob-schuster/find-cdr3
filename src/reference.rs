@@ -1,8 +1,13 @@
 use std::cmp;
+use std::collections::HashMap;
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, BufRead};
 use bio;
 use bio::pattern_matching::myers::{Myers, MyersBuilder};
+use itertools::Itertools;
+use rayon::iter::{IntoParallelIterator, ParallelIterator, IndexedParallelIterator};
+
+use crate::find_v;
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct RefV {
     pub name: String,
@@ -93,4 +98,64 @@ pub(crate) fn parse_reference(reference_fasta: &str) -> Vec<RefV> {
             Err(_) => panic!("Bad record!")
         }
     }).collect()
+}
+
+pub fn optimise_refs(
+    reference_seqs: &Vec<RefV>, 
+    records: bio::io::fasta::Records<BufReader<Box<dyn BufRead>>>, 
+    sample_size: usize, 
+    parallel_chunk_size: usize, 
+    edit_dist: u8, 
+    reference_size: usize
+) -> (Vec<RefV>, Vec<RefV>) {
+    // go through the records populating a counts map
+    let mut map: HashMap<RefV, usize> = HashMap::new();
+
+    for bunch in &records.take(sample_size).chunks(parallel_chunk_size) {
+        let mut outs = Vec::new();
+        
+        bunch.collect_vec().into_par_iter().map(|result| {
+            match result {
+                Err(_) => panic!("Bad record!"),
+                Ok(record) => find_v::parse_one(record.seq(), &reference_seqs, true, edit_dist)
+            }
+        }).collect_into_vec(&mut outs);
+
+        for out in outs {
+            match out {
+                None => { }
+                Some((ref_v, _)) => {
+                    let new_size = match map.get(&ref_v) {
+                        Some(size) => size + 1,
+                        None => 1,
+                    };
+                    map.insert(ref_v, new_size);
+                }
+            }
+        }    
+    }
+
+    let sorted_map = map.into_iter()
+        .sorted_by(|a@(_, edit_a), b@(_, edit_b)| {edit_a.cmp(edit_b)})
+        .rev()
+        .collect_vec();
+
+    for (k, v) in &sorted_map {
+        println!("{},{}", k.seq, v);
+    }
+
+    // convert the map into a sorted list
+    let mut best = sorted_map.into_iter()
+        .map(|(ref_v, _edit_dist)| { ref_v })
+        .collect_vec();
+
+    let mut rest = reference_seqs.into_iter()
+        .filter(|&a| -> bool {best.contains(a)})
+        .map(|a| a.to_owned())
+        .collect_vec();
+
+    best.append(&mut rest);
+    
+    // best
+    (best.clone().into_iter().take(reference_size).collect_vec(), best.into_iter().dropping(reference_size).collect_vec())
 }
