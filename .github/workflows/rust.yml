@@ -37,3 +37,4 @@ jobs:
           ARCHIVE_TYPES: ${{ matrix.archive }}
           PRE_BUILD: pre_build.sh
           STATIC_LINKING: true
+          LIBZ_SYS_STATIC: 1
