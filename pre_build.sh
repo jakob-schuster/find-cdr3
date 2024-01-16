@@ -16,6 +16,7 @@ export LIBZ_SYS_STATIC=1
 export CC=o64-clang
 export CXX=o64-clang++
 
+rustup target add x86_64-apple-darwin
 cargo build --release --target "${MACOS_TARGET}"
 
 echo
