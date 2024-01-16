@@ -22,11 +22,13 @@ pub(crate) fn parse_one(
             // it is below the threshold and worth considering
             best_ref_v = match best_ref_v {
                 None => {
+                    // println!("new best is {} {} cys {} which is {}", best_edit_dist, ref_v.clone().seq, ref_v.clone().cys_index, &ref_v.seq[ref_v.cys_index..]);
                     // if it's the first, always update
                     Some((ref_v.clone(), best_edit_dist))
                 },
                 Some((_, old_edit_dist)) => {
                     if best_edit_dist < old_edit_dist {
+                    // println!("new best is {} {} cys {} which is {}", best_edit_dist, ref_v.clone().name, ref_v.clone().cys_index, &ref_v.seq[ref_v.cys_index..]);
                         // if it's better, update
                         Some((ref_v.clone(), best_edit_dist))
                     } else {
@@ -75,7 +77,7 @@ pub(crate) fn parse_one_lazy(
         let mut matches = 
             owned_myers.find_all_lazy(seq, edit_dist);
         let best_match = 
-            matches.by_ref().max_by_key(|&(_, dist)| dist);
+            matches.by_ref().min_by_key(|&(_, dist)| dist);
 
         match best_match {
             None => {}
@@ -107,7 +109,14 @@ pub(crate) fn parse_one_lazy(
     return None
 }
 
-pub fn optimise_refs(reference_seqs: &Vec<RefV>, records: bio::io::fasta::Records<BufReader<Box<dyn BufRead>>>, sample_size: usize, parallel_chunk_size: usize, edit_dist: u8) -> (Vec<RefV>, Vec<RefV>) {
+pub fn optimise_refs(
+    reference_seqs: &Vec<RefV>, 
+    records: bio::io::fasta::Records<BufReader<Box<dyn BufRead>>>, 
+    sample_size: usize, 
+    parallel_chunk_size: usize, 
+    edit_dist: u8, 
+    reference_size: usize
+) -> (Vec<RefV>, Vec<RefV>) {
     // go through the records populating a counts map
     let mut map: HashMap<reference::RefV, usize> = HashMap::new();
 
@@ -123,7 +132,7 @@ pub fn optimise_refs(reference_seqs: &Vec<RefV>, records: bio::io::fasta::Record
 
         for out in outs {
             match out {
-                None => { } 
+                None => { }
                 Some((ref_v, _)) => {
                     let new_size = match map.get(&ref_v) {
                         Some(size) => size + 1,
@@ -146,9 +155,8 @@ pub fn optimise_refs(reference_seqs: &Vec<RefV>, records: bio::io::fasta::Record
 
     // convert the map into a sorted list
     let mut best = sorted_map.into_iter()
-        .map(|(ref_v, edit_dist)| { ref_v })
+        .map(|(ref_v, _edit_dist)| { ref_v })
         .collect_vec();
-
 
     let mut rest = reference_seqs.into_iter()
         .filter(|&a| -> bool {best.contains(a)})
@@ -158,5 +166,5 @@ pub fn optimise_refs(reference_seqs: &Vec<RefV>, records: bio::io::fasta::Record
     best.append(&mut rest);
     
     // best
-    (best.clone().into_iter().take(10).collect_vec(), best.into_iter().dropping(10).collect_vec())
+    (best.clone().into_iter().take(reference_size).collect_vec(), best.into_iter().dropping(reference_size).collect_vec())
 }

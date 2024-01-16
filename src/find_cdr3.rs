@@ -28,7 +28,7 @@ pub struct OutputRecord {
 
 impl fmt::Display for OutputRecord {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{},{},{}", self.name, self.seq, self.cdr3_seq)
+        write!(f, "{}\t{}\t{}", self.name, self.seq, self.cdr3_seq)
     }
 }
 

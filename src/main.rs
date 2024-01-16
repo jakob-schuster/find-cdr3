@@ -1,7 +1,7 @@
 use core::{panic};
 use std::{io::{BufRead, Write, BufReader, stdout, stdin, Stdin, BufWriter}, fs::File, string, collections::HashMap, path::Path, ffi::OsStr};
 
-use bio::{io::fasta::Record, pattern_matching::myers::Myers};
+use bio::{io::fasta::Record, pattern_matching::myers::Myers, alignment::{Alignment, AlignmentOperation}};
 use clap::{Parser, Arg, ValueHint};
 use itertools::Itertools;
 use rayon::iter::{IntoParallelIterator, ParallelIterator, IndexedParallelIterator};
@@ -18,13 +18,17 @@ pub struct Args {
     /// Reference fasta of different V-gene sequences. The Cys codon near the end of the V-gene sequence marks the start of the CDR3.
     #[arg(short,long)]
     reference_fasta: String,
-    /// Output CSV file of reads and their CDR3s. Writes to stdout if none is provided.
+    /// Output TSV file of reads and their CDR3s. Writes to stdout if none is provided.
     #[arg(short,long, default_value_t = String::from("stdout"))]
-    output_csv: String,
+    output_tsv: String,
 
     /// Size of pre-processing sample, pre-processed to find the most common reference sequences. Not used currently.
-    #[arg(long, default_value_t = 10000, hide=true)]
+    #[arg(long, default_value_t = 10000)]
     sample_size: usize,
+    /// Number of top V-gene sequences to actually search for. The less you use, the quicker the program, but also the less accurate.
+    #[arg(long, default_value_t = 20)]
+    reference_size: usize,
+    
     /// Size of each chunk of reads to process in parallel.
     #[arg(long, short='c',default_value_t = 500000)]
     parallel_chunk_size: usize,
@@ -32,7 +36,7 @@ pub struct Args {
     #[arg(short,long,hide=true)]
     nondeterministic: bool,
     /// Edit distance used for reference sequences.
-    #[arg(short,long, default_value_t = 10)]
+    #[arg(short,long, default_value_t = 20)]
     edit_dist: u8,
     /// FR4 region. Located just after the CDR3.
     #[arg(short,long, default_value_t = String::from("TGGGGCAAAGGGACCCAGGTCAC"))]
@@ -78,7 +82,7 @@ mod output {
     use crate::find_cdr3::OutputRecord;
 
     pub fn print_header<T: Write>(output: &mut T) {
-        write!(output, "id,sequence,cdr3_sequence\n")
+        write!(output, "id\tsequence\tcdr3_sequence\n")
         .expect("Couldn't write header line to output!");
     }
     
@@ -89,11 +93,11 @@ mod output {
 
     /// Checks the arguments, and either opens a file or writes to stdout
     pub fn writer(args: &Args) -> Box<dyn Write> {
-        if args.output_csv.eq("stdout") {
+        if args.output_tsv.eq("stdout") {
             // just read straight from stdin
             Box::new(BufWriter::new(stdout()))
         } else {
-            let path = Path::new(&args.output_csv);
+            let path = Path::new(&args.output_tsv);
             let file = match File::create(path) {
                 Ok(file) => file,
                 Err(_) => panic!("Couldn't open {}!", path.display()),
@@ -120,33 +124,38 @@ fn main() {
     // open the files to read and write from
     let records = bio::io::fasta::Reader::new(input::reader(&args))
         .records();
-
-    // open the files to read and write from
-    let records = bio::io::fasta::Reader::new(
-        BufReader::new(
-            File::open(&args.input_fasta)
-                .expect("Couldn't open input!")))
-                .records();
-    let mut output_csv_file = File::create(&args.output_csv)
-        .expect("Couldn't create output file!");
-    output::print_header(&mut output_csv_file);
-
     
     // optimise the reference seqs list
-    let (optimised_reference_seqs, rest) = find_v::optimise_refs(
+    let (optimised_reference_seqs, _rest) = find_v::optimise_refs(
         &reference_seqs, 
         bio::io::fasta::Reader::new(input::reader(&args)).records(),
-        args.sample_size, args.parallel_chunk_size, args.edit_dist);
+        args.sample_size, args.parallel_chunk_size, args.edit_dist, args.reference_size);
     // let optimised_reference_seqs = reference_seqs;
     
     let mut output_csv_file = output::writer(&args);
-
     // print the header unless the user specifies not to
     if !args.headerless {
         output::print_header(&mut output_csv_file);
     }
 
     let fr4 = Myers::<u64>::new(args.fr4.as_bytes());
+
+    // select a parsing function based on the nondeterminism parameter
+    let parse_one = |record| if !args.nondeterministic {
+        find_cdr3::det::parse_one_input_par(
+            record, 
+            &optimised_reference_seqs, 
+            args.edit_dist, 
+            args.fr4.as_bytes()
+        )
+    } else {
+        find_cdr3::nondet::parse_one_input(
+            record, 
+            &optimised_reference_seqs, 
+            args.edit_dist, 
+            &fr4
+        )
+    };
 
     // go through each result and print to output while you go 
     // to avoid collecting data in memory
@@ -156,15 +165,7 @@ fn main() {
         bunch.collect_vec().into_par_iter().map(|result| {
             match result {
                 Err(_) => panic!("Bad record!"),
-                Ok(record) => if !args.nondeterministic {
-                    find_cdr3::det::parse_one_input_par(
-                        record, &optimised_reference_seqs, args.edit_dist, args.fr4.as_bytes())
-                } else {
-                    // find_cdr3::nondet::parse_one_input_par_opt(
-                    //     record, &optimised_reference_seqs, &reference_seqs, args.edit_dist, &fr4)
-                    find_cdr3::nondet::parse_one_input_par(
-                        record, &optimised_reference_seqs, args.edit_dist, &args.fr4.as_bytes())
-                }
+                Ok(record) => parse_one(record)
             }
         }).collect_into_vec(&mut outs);
 
@@ -172,4 +173,79 @@ fn main() {
             output::print_one(&mut output_csv_file, output)
         }
     }
+}
+
+fn to_char(op: &AlignmentOperation) -> char {
+    match op {
+        AlignmentOperation::Match => 'm',
+        AlignmentOperation::Subst => 's',
+        AlignmentOperation::Del => 'd',
+        AlignmentOperation::Ins => 'i',
+        AlignmentOperation::Xclip(_) => 'x',
+        AlignmentOperation::Yclip(_) => 'y',
+    }
+}
+
+fn find_index(ops: &[AlignmentOperation], ref_index: usize) -> Option<usize> {
+    let mut seq_index = None;
+    let (mut seq_i, mut ref_i) = (0, 0);
+
+    for op in ops {
+        if ref_i == ref_index {
+            seq_index = Some(seq_i);
+            // break;
+        }
+
+        match op {
+            AlignmentOperation::Del => { seq_i += 1 },
+            AlignmentOperation::Ins => { ref_i += 1 },
+            AlignmentOperation::Match => { seq_i += 1; ref_i += 1 },
+            AlignmentOperation::Subst => { seq_i += 1; ref_i += 1 },
+            AlignmentOperation::Xclip(_) => panic!("Xclip"),
+            AlignmentOperation::Yclip(_) => panic!("Yclip")
+        }
+    }
+    
+    seq_index
+}
+
+fn not_main() {
+    let seq = b"
+AAAATGGGAAGAGTCGT";
+
+    let pattern = b"AGGTGGAAG";
+    let tgg_end_pos = 6;
+
+    let mut myers = Myers::<u64>::new(pattern);
+
+    let mut matches = myers.find_all_lazy(seq, 4);
+    let best_match = 
+        matches.by_ref().min_by_key(|&(_, dist)| dist);
+
+    match best_match {
+        Some((end, dist)) => {
+            let mut aln = Alignment::default();
+            matches.alignment_at(end, &mut aln);
+            let ops = aln.operations;
+            
+            let ops_string: String = ops.clone().into_iter().map(|op| to_char(&op)).collect();
+            let index = find_index(&ops[..], tgg_end_pos);
+
+            match index {
+                Some(i) => {
+                    println!("bit was {} in orig. now it's {}", 
+                        String::from_utf8(pattern[tgg_end_pos..].to_vec()).expect("aa"), 
+                        String::from_utf8(seq[i+aln.ystart..].to_vec()).expect("aa")
+                    );
+                    println!("ystart {} in {}", aln.ystart, ops_string);
+                }
+            None => todo!(),
+            }
+
+
+        },
+        None => todo!(),
+    }
+    
+    println!("up to here");
 }
