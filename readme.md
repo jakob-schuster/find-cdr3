@@ -48,6 +48,6 @@ The input file `input-fasta` is parsed. `parallel-chunk-size` reads are processe
 
 Each read is scanned for a V-gene match allowing for `edit-dist` mismatches. Then, based on the position of the Cys codon in the reference sequence and the path of alignment between the reference sequence and the read, the location of the Cys codon within the read is calculated. Then, the FR4 (`fr4`) region is located, allowing for `edit-dist` mismatches. If both the V-gene and the FR4 region could be found, the region from the Cys codon to the start of the FR4 is taken as the CDR3, and extracted. The read ID, the full sequence, and the CDR3 are written to the output file.
 
-## Todo
+## 🗺 Todo
 
 - Add file splitting and merging for further speed improvement
