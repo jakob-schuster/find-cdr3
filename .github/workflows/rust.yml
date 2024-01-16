@@ -8,7 +8,7 @@ on:
 
 jobs:
   release:
-    name: release ${{ matrix.target }}
+    name: build ${{ matrix.target }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -29,3 +29,4 @@ jobs:
         with:
           RUSTTARGET: ${{ matrix.target }}
           ARCHIVE_TYPES: ${{ matrix.archive }}
+          PRE_BUILD: "pre_build.sh"
