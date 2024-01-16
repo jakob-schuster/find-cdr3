@@ -2,7 +2,7 @@
 
 A fast program for extracting CDR3 regions from immunoglobulin sequences. [igblast](https://www.ncbi.nlm.nih.gov/igblast/) also does this, but it's slow and performs operations we're not interested in. This program is a stripped-down, sped-up version of igblast for our specific use case. Around 91.4% of `find-cdr3`'s results perfectly match igblast's; the rest are only very slight variations due to different alignment path strategies.
 
-## Usage
+## 🧭 Usage
 
 Provide `find-cdr3` with an input fasta, a reference fasta, and an output destination. For each read in the input fasta, the CDR3 is located, and then the read's ID, sequence, and CDR3 sequence are printed to a line of an output TSV.
 
@@ -32,9 +32,9 @@ Options:
           Print help
 ```
 
-## Implementation
+## 🔩 Implementation
 
-The `rust-bio` crate was used. All alignment is done using Myers bit-vector algorithm, and 
+The `rust-bio` crate was used. All alignment is done using Myers bit-vector algorithm.
 
 ### Preprocessing
 
@@ -47,3 +47,7 @@ Since there are often hundreds of reference V-genes of which only a few will be 
 The input file `input-fasta` is parsed. `parallel-chunk-size` reads are processed, using as many threads as are available, and then the results are written to an output file by one thread, before the next chunk is handled. 
 
 Each read is scanned for a V-gene match allowing for `edit-dist` mismatches. Then, based on the position of the Cys codon in the reference sequence and the path of alignment between the reference sequence and the read, the location of the Cys codon within the read is calculated. Then, the FR4 (`fr4`) region is located, allowing for `edit-dist` mismatches. If both the V-gene and the FR4 region could be found, the region from the Cys codon to the start of the FR4 is taken as the CDR3, and extracted. The read ID, the full sequence, and the CDR3 are written to the output file.
+
+## Todo
+
+- Add file splitting and merging for further speed improvement
