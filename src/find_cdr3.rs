@@ -107,7 +107,7 @@ pub(crate) fn find_cdr3(
     seq: &[u8], reference_seqs: &Vec<reference::RefV>, edit_dist: u8, fr4: &Myers::<u64>
 ) -> Option<Vec<u8>> {
     // first map to all the variable regions. get the best match (compare by edit dist)
-    let v_matches = reference_seqs.into_par_iter()
+    let v_matches = reference_seqs.into_iter()
     .map(|reference::RefV { name, seq: _ref_seq, myers, cys_index: cys_end_ref } | {
         let mut aln = Alignment::default();
     
@@ -120,9 +120,6 @@ pub(crate) fn find_cdr3(
 
         matches.alignment_at(best_end, &mut aln);
 
-        // let cys_ref_end = *cys_index + 3;
-        // let cys_seq_end = find_index(&aln.clone().operations, cys_ref_end)?;
-        
         Some((name, aln, cys_end_ref))
     });
 

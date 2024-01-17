@@ -23,7 +23,7 @@ pub struct Args {
     #[arg(long, default_value_t = 10000)]
     sample_size: usize,
     /// Number of top V-gene sequences to actually search for. The less you use, the quicker the program, but also the less accurate.
-    #[arg(long, default_value_t = 20)]
+    #[arg(long, default_value_t = 5)]
     reference_size: usize,
     
     /// Size of each chunk of reads to process in parallel.
@@ -134,7 +134,7 @@ fn main() {
 
     let fr4 = Myers::<u64>::new(args.fr4.as_bytes());
 
-    // select a parsing function based on the nondeterminism parameter
+    // just one parsing function to choose from
     let parse_one = |record|
         find_cdr3::parse_one_input(
             record, 
