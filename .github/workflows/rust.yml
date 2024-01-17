@@ -3,76 +3,67 @@ name: Rust
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  build:
 
-  test:
     runs-on: ubuntu-latest
+
     steps:
     - uses: actions/checkout@v3
+    - name: Build
+      run: cargo build --verbose
     - name: Run tests
       run: cargo test --verbose
+
+  release:
+    name: Release ${{ matrix.platform.target }}
+    strategy:
+      matrix:
+        platform:
+          - os: ubuntu-20.04
+            target: x86_64-unknown-linux-musl
+            extra-command:
+            ending:
+            command: build
+
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            ending: .exe
+            command: both
+
+          - os: macOS-latest
+            target: x86_64-apple-darwin
+            ending:
+            command: both
+
+            # more release targets here ...
+
+    runs-on: ${{ matrix.platform.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Get musl-tools
+        run: sudo apt install musl-tools
+        if: ${{ matrix.platform.os == 'ubuntu-20.04' }}
       
-  linux-build:
-    name: Linux build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@master
-      - name: Compile
-        id: compile
-        uses: rust-build/rust-build.action@v1.4.4
+      - name: Build binary
+        uses: houseabsolute/actions-rust-cross@v0
         with:
-          RUSTTARGET: x86_64-unknown-linux-musl
-          UPLOAD_MODE: none
-      - name: Upload artifact
+          command: ${{ matrix.platform.command }}
+          target: ${{ matrix.platform.target }}
+          args: "--release"
+          strip: true
+      
+      - name: Make executable
+        run: chmod +x "target/${{ matrix.platform.target }}/release/${{ github.event.repository.name }}${{ matrix.platform.ending }}"
+      
+      - name: Publish release artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: find-cdr3
-          path: |
-            ${{ steps.compile.outputs.BUILT_ARCHIVE }}
-            ${{ steps.compile.outputs.BUILT_CHECKSUM }}
-
-  # mac build doesn't work :(
-  # 
-  # mac-build:
-  #   name: MacOS build
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@master
-  #     - name: Compile
-  #       id: compile
-  #       uses: rust-build/rust-build.action@v1.4.4
-  #       with:
-  #         RUSTTARGET: x86_64-apple-darwin
-  #         UPLOAD_MODE: none
-  #     - name: Upload artifact
-  #       uses: actions/upload-artifact@v3
-  #       with:
-  #         name: Binary
-  #         path: |
-  #           ${{ steps.compile.outputs.BUILT_ARCHIVE }}
-  #           ${{ steps.compile.outputs.BUILT_CHECKSUM }}
-
-  win-build:
-    name: Windows build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@master
-      - name: Compile
-        id: compile
-        uses: rust-build/rust-build.action@v1.4.4
-        with:
-          RUSTTARGET: x86_64-pc-windows-gnu
-          UPLOAD_MODE: none
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: find-cdr3
-          path: |
-            ${{ steps.compile.outputs.BUILT_ARCHIVE }}
-            ${{ steps.compile.outputs.BUILT_CHECKSUM }}
+          name: ${{ github.event.repository.name }}-${{ matrix.platform.target }}
+          path: "target/${{ matrix.platform.target }}/release/${{ github.event.repository.name }}${{ matrix.platform.ending }}"
