@@ -2,7 +2,7 @@
 
 A fast program for extracting CDR3 regions from immunoglobulin sequences. [igblast](https://www.ncbi.nlm.nih.gov/igblast/) also does this, but it's slow and performs operations we're not interested in. This program is a stripped-down, hopefully sped-up version of igblast for our specific use case. Around 91.4% of `find-cdr3`'s results perfectly match igblast's; the rest are only very slight variations due to different alignment path strategies.
 
- [Download latest nightly builds for Linux / Windows](https://nightly.link/jakob-schuster/find-cdr3/workflows/rust/main/find-cdr3.zip)
+Download latest nightly builds for [Linux](https://nightly.link/jakob-schuster/find-cdr3/workflows/rust/main/find-cdr3-x86_64-unknown-linux-musl.zip) / [Mac](https://nightly.link/jakob-schuster/find-cdr3/workflows/rust/main/find-cdr3-x86_64-apple-darwin.zip) / [Windows](https://nightly.link/jakob-schuster/find-cdr3/workflows/rust/main/find-cdr3-x86_64-pc-windows-msvc.zip)
 
 ## 🧭 Usage
 
