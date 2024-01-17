@@ -2,6 +2,8 @@
 
 A fast program for extracting CDR3 regions from immunoglobulin sequences. [igblast](https://www.ncbi.nlm.nih.gov/igblast/) also does this, but it's slow and performs operations we're not interested in. This program is a stripped-down, hopefully sped-up version of igblast for our specific use case. Around 91.4% of `find-cdr3`'s results perfectly match igblast's; the rest are only very slight variations due to different alignment path strategies.
 
+ [Download latest nightly builds for Linux / Windows](https://nightly.link/jakob-schuster/find-cdr3/workflows/rust/main/Binary.zip)
+
 ## 🧭 Usage
 
 Provide `find-cdr3` with an input fasta, a reference fasta, and an output destination. For each read in the input fasta, the CDR3 is located, and then the read's ID, sequence, and CDR3 sequence are printed to a line of an output TSV.
