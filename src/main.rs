@@ -27,7 +27,7 @@ pub struct Args {
     reference_size: usize,
     
     /// Size of each chunk of reads to process in parallel.
-    #[arg(long, short='c',default_value_t = 500000)]
+    #[arg(long, short='c',default_value_t = 300000)]
     parallel_chunk_size: usize,
     /// Edit distance used for reference sequences.
     #[arg(short,long, default_value_t = 20)]
@@ -151,7 +151,12 @@ fn main() {
         bunch.collect_vec().into_par_iter().map(|result| {
             match result {
                 Err(_) => panic!("Bad record!"),
-                Ok(record) => parse_one(record)
+                Ok(record) => find_cdr3::parse_one_input(
+                    record, 
+                    &optimised_reference_seqs, 
+                    args.edit_dist, 
+                    &fr4
+                )
             }
         }).collect_into_vec(&mut outs);
 

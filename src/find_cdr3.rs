@@ -28,7 +28,10 @@ pub(crate) fn parse_one_input(
 
     let mut vec = Vec::new();
     
-    vec![record.seq(), &bio::alphabets::dna::revcomp(record.seq())]
+    let seq = record.seq();
+    let rev_seq = &bio::alphabets::dna::revcomp(record.seq());
+
+    [seq, rev_seq]
         .into_par_iter()
         .map(|seq| {
             find_cdr3(
@@ -40,38 +43,36 @@ pub(crate) fn parse_one_input(
         })
         .collect_into_vec(&mut vec);
 
-    if let [forward, reverse] = &vec[..] {
-        match (&forward, &reverse) {
-            // neither was successful
-            (None, None) => OutputRecord {
-                name: String::from(record.id()),
-                seq: String::from_utf8(record.seq().to_vec()).unwrap(),
-                cdr3_seq: String::from("neither")
-            },
-    
-            // forwards was successful
-            (Some(seq), None) => OutputRecord { 
-                name: String::from(record.id()),
-                seq: String::from_utf8(record.seq().to_vec()).unwrap(),
-                cdr3_seq: String::from_utf8(seq.to_owned()).unwrap()
-            },
-    
-            // reverse was successful
-            (None, Some(seq)) => OutputRecord { 
-                name: String::from(record.id()),
-                seq: String::from_utf8(bio::alphabets::dna::revcomp(record.seq())).unwrap(),
-                cdr3_seq: String::from_utf8(seq.to_owned()).unwrap()
-            },
-    
-            // both were successful - ambiguous
-            (Some(seq), Some(rev_seq)) => OutputRecord {
-                name: String::from(record.id()),
-                seq: String::from_utf8(record.seq().to_vec()).unwrap(),
-                cdr3_seq: String::from("both")
-            }
-        }
-    } else {
-        panic!("Thread problem")
+    match &vec[..] {
+        // neither was successful
+        [None, None] => OutputRecord {
+            name: String::from(record.id()),
+            seq: String::from_utf8(seq.to_vec()).unwrap(),
+            cdr3_seq: String::from("neither")
+        },
+
+        // forwards was successful
+        [Some(seq_cdr3), None] => OutputRecord { 
+            name: String::from(record.id()),
+            seq: String::from_utf8(seq.to_vec()).unwrap(),
+            cdr3_seq: String::from_utf8(seq_cdr3.to_owned()).unwrap()
+        },
+
+        // reverse was successful
+        [None, Some(seq_cdr3)] => OutputRecord { 
+            name: String::from(record.id()),
+            seq: String::from_utf8(rev_seq.to_vec()).unwrap(),
+            cdr3_seq: String::from_utf8(seq_cdr3.to_owned()).unwrap()
+        },
+
+        // both were successful - ambiguous
+        [Some(seq_cdr3), Some(rev_seq_cdr3)] => OutputRecord {
+            name: String::from(record.id()),
+            seq: String::from_utf8(seq.to_vec()).unwrap(),
+            cdr3_seq: String::from("both")
+        },
+
+        _ => panic!("Thread problem")
     }
 }
 
@@ -107,21 +108,20 @@ pub(crate) fn find_cdr3(
     seq: &[u8], reference_seqs: &Vec<reference::RefV>, edit_dist: u8, fr4: &Myers::<u64>
 ) -> Option<Vec<u8>> {
     // first map to all the variable regions. get the best match (compare by edit dist)
-    let v_matches = reference_seqs.into_iter()
-    .map(|reference::RefV { name, seq: _ref_seq, myers, cys_index: cys_end_ref } | {
-        let mut aln = Alignment::default();
-    
-        let mut owned_myers = myers.clone();
+    let v_matches = reference_seqs.into_par_iter()
+        .map(|reference::RefV { name, seq: _ref_seq, myers, cys_index: cys_end_ref } | {
+            let mut owned_myers = myers.clone();
 
-        let mut matches = 
-            owned_myers.find_all_lazy(seq, edit_dist);
-        let (best_end, _) = 
-            matches.by_ref().min_by_key(|&(_, dist)| dist)?;
+            let mut matches = 
+                owned_myers.find_all_lazy(seq, edit_dist);
+            let (best_end, _) = 
+                matches.by_ref().min_by_key(|&(_, dist)| dist)?;
 
-        matches.alignment_at(best_end, &mut aln);
+            let mut aln = Alignment::default();
+            matches.alignment_at(best_end, &mut aln);
 
-        Some((name, aln, cys_end_ref))
-    });
+            Some((name, aln, cys_end_ref))
+        });
 
     // get the cys start of the best match, if there is a match at all
     let (_, best_aln, cys_end_ref) = v_matches.min_by(|a, b| {
