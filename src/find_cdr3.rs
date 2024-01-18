@@ -59,14 +59,14 @@ pub(crate) fn parse_one_input(
         },
 
         // reverse was successful
-        [None, Some(seq_cdr3)] => OutputRecord { 
+        [None, Some(rev_seq_cdr3)] => OutputRecord { 
             name: String::from(record.id()),
             seq: String::from_utf8(rev_seq.to_vec()).unwrap(),
-            cdr3_seq: String::from_utf8(seq_cdr3.to_owned()).unwrap()
+            cdr3_seq: String::from_utf8(rev_seq_cdr3.to_owned()).unwrap()
         },
 
         // both were successful - ambiguous
-        [Some(seq_cdr3), Some(rev_seq_cdr3)] => OutputRecord {
+        [Some(_), Some(_)] => OutputRecord {
             name: String::from(record.id()),
             seq: String::from_utf8(seq.to_vec()).unwrap(),
             cdr3_seq: String::from("both")
@@ -108,7 +108,7 @@ pub(crate) fn find_cdr3(
     seq: &[u8], reference_seqs: &Vec<reference::RefV>, edit_dist: u8, fr4: &Myers::<u64>
 ) -> Option<Vec<u8>> {
     // first map to all the variable regions. get the best match (compare by edit dist)
-    let v_matches = reference_seqs.into_par_iter()
+    let v_matches = reference_seqs.into_iter()
         .map(|reference::RefV { name, seq: _ref_seq, myers, cys_index: cys_end_ref } | {
             let mut owned_myers = myers.clone();
 
