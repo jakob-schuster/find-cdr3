@@ -41,7 +41,11 @@ jobs:
             # more release targets here ...
 
     runs-on: ${{ matrix.platform.os }}
+    
+    
     container: quay.io/pypa/manylinux2014_x86_64
+    if: ${{ matrix.platform.os == 'ubuntu-20.04' }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v3
