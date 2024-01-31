@@ -23,7 +23,7 @@ jobs:
       matrix:
         platform:
           - os: ubuntu-20.04
-            target: x86_64-unknown-linux-musl
+            target: x86_64-unknown-linux-gnu
             extra-command:
             ending:
             command: build
@@ -45,9 +45,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Get musl-tools
-        run: sudo apt install musl-tools
-        if: ${{ matrix.platform.os == 'ubuntu-20.04' }}
+      # - name: Get musl-tools
+        # run: sudo apt install musl-tools
+        # if: ${{ matrix.platform.os == 'ubuntu-20.04' }}
       
       - name: Build binary
         uses: houseabsolute/actions-rust-cross@v0
