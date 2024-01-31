@@ -42,7 +42,7 @@ jobs:
             # more release targets here ...
 
     runs-on: ${{ matrix.platform.os }}
-    container: ${{ matrix.container }}
+    container: ${{ matrix.platform.container }}
 
     steps:
       - name: Checkout
