@@ -27,6 +27,7 @@ jobs:
             extra-command:
             ending:
             command: build
+          - container: quay.io/pypa/manylinux2014_x86_64
 
           - os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -43,8 +44,6 @@ jobs:
     runs-on: ${{ matrix.platform.os }}
     
     
-    container: quay.io/pypa/manylinux2014_x86_64
-    if: ${{ matrix.platform.os == 'ubuntu-20.04' }}
 
     steps:
       - name: Checkout
