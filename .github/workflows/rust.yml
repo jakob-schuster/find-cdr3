@@ -27,7 +27,7 @@ jobs:
             extra-command:
             ending:
             command: build
-          - container: quay.io/pypa/manylinux2014_x86_64
+            container: quay.io/pypa/manylinux2014_x86_64
 
           - os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -42,8 +42,7 @@ jobs:
             # more release targets here ...
 
     runs-on: ${{ matrix.platform.os }}
-    
-    
+    container: ${{ matrix.container }}
 
     steps:
       - name: Checkout
