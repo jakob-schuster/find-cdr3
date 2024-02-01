@@ -17,17 +17,32 @@ jobs:
     - name: Test
       run: cargo test --verbose
 
+  release-wehi:
+    name: Release Milton-compatible binary
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Get zigbuild
+        run: sudo apt install snap ; sudo snap install zig --beta --classic ; cargo install cargo-zigbuild
+
+      - name: Compile
+        run: cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.17
+
+      - name: Publish artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ github.event.repository.name }}-milton
+          path: "target/x86_64-unknown-linux-gnu/release/${{ github.event.repository.name }}"
+
   release:
     name: Release ${{ matrix.platform.target }}
     strategy:
       matrix:
         platform:
           - os: ubuntu-20.04
-            target: x86_64-unknown-linux-gnu.2.17
+            target: x86_64-unknown-linux-gnu
             extra-command:
             ending:
-            command: zigbuild
-            container: quay.io/pypa/manylinux2014_x86_64
+            command: build
 
           - os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -47,9 +62,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      - name: Get zigbuild
-        run: sudo apt install snap ; sudo snap install zig --beta --classic ; cargo install cargo-zigbuild
-        if: ${{ matrix.platform.os == 'ubuntu-20.04' }}
+      # - name: Get zigbuild
+      #   run: sudo apt install snap ; sudo snap install zig --beta --classic ; cargo install cargo-zigbuild
+      #   if: ${{ matrix.platform.os == 'ubuntu-20.04' }}
       
       - name: Build binary
         uses: houseabsolute/actions-rust-cross@v0
