@@ -110,6 +110,7 @@ mod output {
 }
 
 fn main() {
+    // just use the seq_io backend for now
     seq_io_main();
 }
 

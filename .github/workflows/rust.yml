@@ -19,30 +19,6 @@ jobs:
     - name: Test
       run: cargo test --verbose --target x86_64-unknown-linux-gnu
 
-  # release-wehi:
-  #   name: Release Milton-compatible binary
-  #   runs-on: ubuntu-20.04
-  #   steps:
-  #     - name: Get zigbuild
-  #       run: sudo apt install snap ; sudo snap install zig --beta --classic ; cargo install cargo-zigbuild
-        
-  #     - name: Build binary
-  #       uses: houseabsolute/actions-rust-cross@v0
-  #       with:
-  #         command: build
-  #         target: x86_64-unknown-linux-musl
-  #         args: "--release"
-  #         strip: true
-
-  #     - name: Compile
-  #       run: cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.17
-
-  #     - name: Publish artifact
-  #       uses: actions/upload-artifact@v3
-  #       with:
-  #         name: ${{ github.event.repository.name }}-milton
-  #         path: "target/x86_64-unknown-linux-gnu/release/${{ github.event.repository.name }}"
-
   release:
     name: Release ${{ matrix.platform.target }}
     strategy:
@@ -70,10 +46,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-
-      # - name: Get zigbuild
-      #   run: sudo apt install snap ; sudo snap install zig --beta --classic ; cargo install cargo-zigbuild
-      #   if: ${{ matrix.platform.os == 'ubuntu-20.04' }}
       
       - name: Build binary
         uses: houseabsolute/actions-rust-cross@v0
@@ -81,7 +53,6 @@ jobs:
           command: ${{ matrix.platform.command }}
           target: ${{ matrix.platform.target }}
           args: "--release"
-          env: 
           strip: true
       
       - name: Make executable
