@@ -23,10 +23,10 @@ jobs:
       matrix:
         platform:
           - os: ubuntu-20.04
-            target: x86_64-unknown-linux-gnu
+            target: x86_64-unknown-linux-gnu.2.17
             extra-command:
             ending:
-            command: build
+            command: zigbuild
             container: quay.io/pypa/manylinux2014_x86_64
 
           - os: windows-latest
@@ -48,9 +48,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
-      # - name: Get musl-tools
-        # run: sudo apt install musl-tools
-        # if: ${{ matrix.platform.os == 'ubuntu-20.04' }}
+      - name: Get zigbuild
+        run: sudo apt install snap ; sudo snap install zig --beta --classic ; cargo install zigbuild
+        if: ${{ matrix.platform.os == 'ubuntu-20.04' }}
       
       - name: Build binary
         uses: houseabsolute/actions-rust-cross@v0

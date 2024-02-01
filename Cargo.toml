@@ -14,3 +14,4 @@ clap = { version = "4.4.10", features = ["derive"] }
 itertools = "*"
 rayon = "*"
 flate2 = { version = "*", features = ["zlib-ng"] }
+seq_io = "*"

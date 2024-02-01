@@ -1,7 +1,9 @@
 use bio::{pattern_matching::myers::Myers, alignment::AlignmentOperation};
 use clap::Parser;
+use find_cdr3::OutputRecord;
 use itertools::Itertools;
 use rayon::iter::{IntoParallelIterator, ParallelIterator, IndexedParallelIterator};
+use seq_io::{fasta::Record, parallel::parallel_fasta};
 
 mod reference;
 mod find_cdr3;
@@ -80,11 +82,11 @@ mod output {
         .expect("Couldn't write header line to output!");
     }
     
-    pub fn print_one<T: Write>(output: &mut T, output_record: OutputRecord) {
+    pub fn print_one<T: Write>(output: &mut T, output_record: &OutputRecord) {
         write!(output, "{}\n", output_record)
             .expect("Couldn't write line to output!");
     }
-
+    
     /// Checks the arguments, and either opens a file or writes to stdout
     pub fn writer(args: &Args) -> Box<dyn Write> {
         if args.output_tsv.eq("stdout") {
@@ -107,8 +109,12 @@ mod output {
     }
 }
 
-/// The main function with all the stuff in it
 fn main() {
+    seq_io_main();
+}
+
+/// The main function with all the stuff in it
+fn bio_main() {
     // get the arguments from the command line
     let args = Args::parse();
 
@@ -161,9 +167,80 @@ fn main() {
         }).collect_into_vec(&mut outs);
 
         for output in outs {
-            output::print_one(&mut output_csv_file, output)
+            output::print_one(&mut output_csv_file, &output)
         }
     }
+}
+
+/// The seq_io main function with all the stuff in it
+fn seq_io_main() {
+    // get the arguments from the command line
+    let args = Args::parse();
+
+    // collect all the reference seqs
+    let reference_seqs = reference::parse_reference(&args.reference_fasta);
+
+    // open the files to read and write from
+    let records = bio::io::fasta::Reader::new(input::reader(&args))
+        .records();
+
+    let reader = seq_io::fasta::Reader::from_path(&args.input_fasta)
+        .unwrap();
+    
+    // optimise the reference seqs list
+    let (optimised_reference_seqs, _rest) = reference::optimise_refs(
+        &reference_seqs, 
+        bio::io::fasta::Reader::new(input::reader(&args)).records(),
+        args.sample_size, args.parallel_chunk_size, args.edit_dist, args.reference_size);
+    // let optimised_reference_seqs = reference_seqs;
+    
+    let mut output_csv_file = output::writer(&args);
+    // print the header unless the user specifies not to
+    if !args.headerless {
+        output::print_header(&mut output_csv_file);
+    }
+
+    let fr4 = Myers::<u64>::new(args.fr4.as_bytes());
+
+    let _ = parallel_fasta(reader, 64, 1000, |record, out| {
+        *out = find_cdr3::parse_one_input_seq_io(
+            &record, 
+            &optimised_reference_seqs, 
+            args.edit_dist, 
+            &fr4
+        );
+    }, |record, out| {
+        match out {
+            find_cdr3::SmallOutputRecord::Reverse(cdr3) => {
+                writeln!(output_csv_file, "{}\t{}\t{}",
+                    std::str::from_utf8(record.head()).unwrap(), 
+                    std::str::from_utf8(&bio::alphabets::dna::revcomp(record.seq())[..]).unwrap(), 
+                    std::str::from_utf8(cdr3).unwrap()
+                ).expect("Couldn't write line to output!");
+            }
+            find_cdr3::SmallOutputRecord::Forward(cdr3) => {
+                writeln!(output_csv_file, "{}\t{}\t{}",
+                    std::str::from_utf8(record.head()).unwrap(), 
+                    std::str::from_utf8(record.seq()).unwrap(), 
+                    std::str::from_utf8(cdr3).unwrap()
+                ).expect("Couldn't write line to output!");
+            }
+            find_cdr3::SmallOutputRecord::Both => {
+                writeln!(output_csv_file, "{}\t{}\tboth",
+                    std::str::from_utf8(record.head()).unwrap(), 
+                    std::str::from_utf8(record.seq()).unwrap() 
+                ).expect("Couldn't write line to output!");
+            }
+            find_cdr3::SmallOutputRecord::Neither => {
+                writeln!(output_csv_file, "{}\t{}\tneither",
+                    std::str::from_utf8(record.head()).unwrap(), 
+                    std::str::from_utf8(record.seq()).unwrap()
+                ).expect("Couldn't write line to output!");
+            }
+        }; 
+        
+        None::<()>
+    });
 }
 
 fn to_char(op: &AlignmentOperation) -> char {

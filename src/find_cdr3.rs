@@ -2,10 +2,12 @@ use core::fmt;
 use std::cmp;
 
 use bio::{io::fasta::Record, pattern_matching::myers::Myers, alignment::{AlignmentOperation, Alignment}};
+use itertools::Itertools;
 use rayon::iter::{IntoParallelIterator, ParallelIterator, IndexedParallelIterator};
 
 use crate::reference;
 
+#[derive(Default)]
 pub struct OutputRecord {
     pub(crate) name: String,
     pub(crate) seq: String,
@@ -76,6 +78,59 @@ pub(crate) fn parse_one_input(
     }
 }
 
+
+#[derive(Default, Debug)]
+pub enum SmallOutputRecord {
+    #[default]
+    Neither,
+    Forward(Vec<u8>),
+    Reverse(Vec<u8>),
+    Both
+}
+
+pub(crate) fn parse_one_input_seq_io<'a>(
+    record: &'a seq_io::fasta::RefRecord,
+    reference_seqs: &[reference::RefV],
+    edit_dist: u8,
+    fr4: &Myers::<u64>
+) -> SmallOutputRecord {
+    // println!("checking seq {}", record.id());
+
+    // let mut vec = Vec::new();
+    
+    let binding = record.full_seq();
+    let seq = binding.as_ref();
+    let rev_seq = &bio::alphabets::dna::revcomp(seq);
+
+    let vec = [seq, rev_seq]
+        .iter()
+        .map(|seq| {
+            find_cdr3(
+                seq, 
+                reference_seqs,
+                edit_dist,
+                fr4
+            )
+        }).collect_vec();
+
+    match &vec[..] {
+        // neither was successful
+        [None, None] => SmallOutputRecord::Neither,
+
+        // forwards was successful
+        [Some(seq_cdr3), None] => SmallOutputRecord::Forward(seq_cdr3.to_owned()),
+
+        // reverse was successful
+        [None, Some(rev_seq_cdr3)] => SmallOutputRecord::Reverse(rev_seq_cdr3.to_owned()),
+
+        // both were successful - ambiguous
+        [Some(_), Some(_)] => SmallOutputRecord::Both,
+
+        _ => panic!("Thread problem")
+    }
+}
+
+
 fn find_index_old(ops: &[AlignmentOperation], ref_index: usize) -> Option<usize> {
     let mut seq_index = None;
     let (mut seq_i, mut ref_i) = (0, 0);
@@ -105,8 +160,66 @@ fn find_index(aln: &Alignment, ref_index: &usize) -> Option<usize> {
 }
 
 pub(crate) fn find_cdr3(
-    seq: &[u8], reference_seqs: &Vec<reference::RefV>, edit_dist: u8, fr4: &Myers::<u64>
+    seq: &[u8], reference_seqs: &[reference::RefV], edit_dist: u8, fr4: &Myers::<u64>
 ) -> Option<Vec<u8>> {
+    // first map to all the variable regions. get the best match (compare by edit dist)
+    let v_matches = reference_seqs.iter()
+        .map(|reference::RefV { name, seq: _ref_seq, myers, cys_index: cys_end_ref } | {
+            let mut owned_myers = myers.clone();
+
+            let mut matches = 
+                owned_myers.find_all_lazy(seq, edit_dist);
+            let (best_end, _) = 
+                matches.by_ref().min_by_key(|&(_, dist)| dist)?;
+
+            let mut aln = Alignment::default();
+            matches.alignment_at(best_end, &mut aln);
+
+            Some((name, aln, cys_end_ref))
+        });
+
+    // get the cys start of the best match, if there is a match at all
+    let (_, best_aln, cys_end_ref) = v_matches.min_by(|a, b| {
+        match (a, b) {
+            (None, None) => cmp::Ordering::Equal,
+            (None, Some(_)) => cmp::Ordering::Greater,
+            (Some(_), None) => cmp::Ordering::Less,
+            (Some((_, aln_a, _)), Some((_, aln_b, _)))
+                => aln_a.score.cmp(&aln_b.score)
+        }
+    })??;
+
+    // previously, we've calculated this properly, using the alignment path
+    // igblast instead just finds the start position, then goes 3 bases further
+    // so we've mimicked their technique
+    let cys_start_seq = find_index(&best_aln, &(cys_end_ref-3))?;
+    let cys_end_seq = cys_start_seq + 3;
+
+    // println!("best dist {} matched {} giving cys end seq {} which is ({}){}", 
+    //     best_aln.score,
+    //     name,
+    //     cys_end_seq, 
+    //     String::from_utf8(seq[cys_end_seq-3..cys_end_seq].to_vec()).expect("aa"),
+    //     String::from_utf8(seq[cys_end_seq..cys_end_seq+10].to_vec()).expect("aa")
+    // );
+
+    if cys_end_seq >= seq.len() {
+        // some reads get cut off just after the V gene (that is, FR3-IMGT)
+        None
+    } else {
+        let (first_fr4_start, _, _) = fr4.clone()
+            .find_all(&seq[cys_end_seq..], edit_dist)
+            .min_by_key(|&(_, _, dist)| dist)?;
+        let fr4_start = first_fr4_start + cys_end_seq;
+        
+        Some(seq[cys_end_seq..fr4_start].to_owned())
+    }
+}
+
+
+pub(crate) fn find_cdr3_no_clone<'a>(
+    seq: &'a [u8], reference_seqs: &Vec<reference::RefV>, edit_dist: u8, fr4: &Myers::<u64>
+) -> Option<&'a[u8]> {
     // first map to all the variable regions. get the best match (compare by edit dist)
     let v_matches = reference_seqs.into_iter()
         .map(|reference::RefV { name, seq: _ref_seq, myers, cys_index: cys_end_ref } | {
@@ -157,6 +270,6 @@ pub(crate) fn find_cdr3(
             .min_by_key(|&(_, _, dist)| dist)?;
         let fr4_start = first_fr4_start + cys_end_seq;
         
-        Some(seq[cys_end_seq..fr4_start].to_owned())
+        Some(&seq[cys_end_seq..fr4_start])
     }
 }
