@@ -1,100 +1,89 @@
-use bio;
-use bio::pattern_matching::myers::{Myers, MyersBuilder};
+use bio::pattern_matching::myers::Myers;
 use itertools::Itertools;
-use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 use std::cmp;
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 
-use crate::find_v;
-#[derive(Clone, PartialEq, Eq, Hash)]
+use crate::{find_v, Args};
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct RefV {
     pub name: String,
-    pub seq: String,
+    pub seq: Vec<u8>,
     pub myers: Myers,
     pub cys_index: usize,
 }
 
-#[cfg(test)]
-pub(crate) mod tests {
-    use super::*;
-    #[test]
-    fn test_translate() {
-        assert_eq!(translate("TGGGGCCAGGGGACCCAGGTCACCGTC"), "WGQGTQVTV")
-    }
-}
-
-pub(crate) fn translate(seq: &str) -> String {
-    fn translate_codon(codon: &str) -> char {
+pub(crate) fn translate(seq: &[u8]) -> String {
+    fn translate_codon(codon: &[u8]) -> char {
         match codon {
-            "TTT" => 'F',
-            "TTC" => 'F',
-            "TTA" => 'L',
-            "TTG" => 'L',
-            "TCT" => 'S',
-            "TCC" => 'S',
-            "TCA" => 'S',
-            "TCG" => 'S',
-            "TAT" => 'Y',
-            "TAC" => 'Y',
-            "TAA" => '-',
-            "TAG" => '-',
-            "TGT" => 'C',
-            "TGC" => 'C',
-            "TGA" => '-',
-            "TGG" => 'W',
+            b"TTT" => 'F',
+            b"TTC" => 'F',
+            b"TTA" => 'L',
+            b"TTG" => 'L',
+            b"TCT" => 'S',
+            b"TCC" => 'S',
+            b"TCA" => 'S',
+            b"TCG" => 'S',
+            b"TAT" => 'Y',
+            b"TAC" => 'Y',
+            b"TAA" => '-',
+            b"TAG" => '-',
+            b"TGT" => 'C',
+            b"TGC" => 'C',
+            b"TGA" => '-',
+            b"TGG" => 'W',
 
-            "CTT" => 'L',
-            "CTC" => 'L',
-            "CTA" => 'L',
-            "CTG" => 'L',
-            "CCT" => 'P',
-            "CCC" => 'P',
-            "CCA" => 'P',
-            "CCG" => 'P',
-            "CAT" => 'H',
-            "CAC" => 'H',
-            "CAA" => 'Q',
-            "CAG" => 'Q',
-            "CGT" => 'R',
-            "CGC" => 'R',
-            "CGA" => 'R',
-            "CGG" => 'R',
+            b"CTT" => 'L',
+            b"CTC" => 'L',
+            b"CTA" => 'L',
+            b"CTG" => 'L',
+            b"CCT" => 'P',
+            b"CCC" => 'P',
+            b"CCA" => 'P',
+            b"CCG" => 'P',
+            b"CAT" => 'H',
+            b"CAC" => 'H',
+            b"CAA" => 'Q',
+            b"CAG" => 'Q',
+            b"CGT" => 'R',
+            b"CGC" => 'R',
+            b"CGA" => 'R',
+            b"CGG" => 'R',
 
-            "ATT" => 'I',
-            "ATC" => 'I',
-            "ATA" => 'I',
-            "ATG" => 'M',
-            "ACT" => 'T',
-            "ACC" => 'T',
-            "ACA" => 'T',
-            "ACG" => 'T',
-            "AAT" => 'N',
-            "AAC" => 'N',
-            "AAA" => 'K',
-            "AAG" => 'K',
-            "AGT" => 'S',
-            "AGC" => 'S',
-            "AGA" => 'R',
-            "AGG" => 'R',
+            b"ATT" => 'I',
+            b"ATC" => 'I',
+            b"ATA" => 'I',
+            b"ATG" => 'M',
+            b"ACT" => 'T',
+            b"ACC" => 'T',
+            b"ACA" => 'T',
+            b"ACG" => 'T',
+            b"AAT" => 'N',
+            b"AAC" => 'N',
+            b"AAA" => 'K',
+            b"AAG" => 'K',
+            b"AGT" => 'S',
+            b"AGC" => 'S',
+            b"AGA" => 'R',
+            b"AGG" => 'R',
 
-            "GTT" => 'V',
-            "GTC" => 'V',
-            "GTA" => 'V',
-            "GTG" => 'V',
-            "GCT" => 'A',
-            "GCC" => 'A',
-            "GCA" => 'A',
-            "GCG" => 'A',
-            "GAT" => 'D',
-            "GAC" => 'D',
-            "GAA" => 'E',
-            "GAG" => 'E',
-            "GGT" => 'G',
-            "GGC" => 'G',
-            "GGA" => 'G',
-            "GGG" => 'G',
+            b"GTT" => 'V',
+            b"GTC" => 'V',
+            b"GTA" => 'V',
+            b"GTG" => 'V',
+            b"GCT" => 'A',
+            b"GCC" => 'A',
+            b"GCA" => 'A',
+            b"GCG" => 'A',
+            b"GAT" => 'D',
+            b"GAC" => 'D',
+            b"GAA" => 'E',
+            b"GAG" => 'E',
+            b"GGT" => 'G',
+            b"GGC" => 'G',
+            b"GGA" => 'G',
+            b"GGG" => 'G',
 
             _ => '?',
         }
@@ -109,20 +98,21 @@ pub(crate) fn translate(seq: &str) -> String {
     }
 }
 
-pub(crate) fn last_cys(seq: &str) -> Option<usize> {
+pub(crate) fn last_cys(seq: &[u8]) -> Option<usize> {
     let proteins = translate(seq);
-    proteins.rfind('C').map_or(None, |a| Some(a * 3))
+    proteins.rfind('C')
+        .map(|a| a * 3)
 }
 
 pub(crate) fn last_cys_simple(seq: &str) -> Option<usize> {
-    let mut cys_myers = Myers::<u64>::new(b"TGT");
+    let cys_myers = Myers::<u64>::new(b"TGT");
     // let mut cys_myers = MyersBuilder::new().ambig(b'B', b"TC")
     //     .build_64(b"TGB");
 
     cys_myers
         .find_all_end(seq.as_bytes(), 0)
-        .max_by_key(|(st, ed)| st.clone())
-        .map_or(None, |(st, ed)| Some(st + 1))
+        .max_by_key(|(st, _)| *st)
+        .map(|(st, _)| st + 1)
 }
 
 pub(crate) fn parse_reference(reference_fasta: &str) -> Vec<RefV> {
@@ -132,20 +122,21 @@ pub(crate) fn parse_reference(reference_fasta: &str) -> Vec<RefV> {
 
     reader
         .records()
-        .into_iter()
         .map(|result| match result {
             Ok(record) => {
-                let seq = String::from_utf8(record.seq().to_vec())
-                    .expect("Bad sequence line!")
+                let seq = record.seq()
                     .to_ascii_uppercase();
 
-                let short_seq_start = cmp::max(0, seq.len() - 64);
+                let short_seq_len = 64;
+                let reading_frame = (seq.len() - short_seq_len) % 3;
+                let short_seq_start = cmp::max(0, seq.len() - short_seq_len + (3 - reading_frame));
+
                 let short_seq = &seq[short_seq_start..];
 
                 RefV {
                     name: String::from(record.id()),
-                    seq: String::from(short_seq),
-                    myers: Myers::<u64>::new(short_seq.as_bytes()),
+                    seq: Vec::from(short_seq),
+                    myers: Myers::<u64>::new(short_seq),
                     cys_index: last_cys(&seq).expect("No Cys!") - short_seq_start + 3,
                 }
             }
@@ -156,68 +147,51 @@ pub(crate) fn parse_reference(reference_fasta: &str) -> Vec<RefV> {
 
 pub fn optimise_refs(
     reference_seqs: &Vec<RefV>,
-    records: bio::io::fasta::Records<BufReader<Box<dyn BufRead>>>,
-    sample_size: usize,
-    parallel_chunk_size: usize,
-    edit_dist: u8,
-    reference_size: usize,
+    args: &Args,
 ) -> (Vec<RefV>, Vec<RefV>) {
     // go through the records populating a counts map
     let mut map: HashMap<RefV, usize> = HashMap::new();
 
-    for bunch in &records.take(sample_size).chunks(parallel_chunk_size) {
-        let mut outs = Vec::new();
+    let reader = crate::input::Reader::new(&args.input_reads, args)
+        .unwrap();
+    reader.map(
+        |read| {
+            find_v::parse_one(read.seq(), reference_seqs, true, args.edit_dist)
+        },
+        |opt, map: &mut HashMap<RefV, usize>| {
+            if let Some((ref_v, _)) = opt {
+                let new_size = match map.get(&ref_v) {
+                    Some(size) => size + 1,
+                    None => 1
+                };
 
-        bunch
-            .collect_vec()
-            .into_par_iter()
-            .map(|result| match result {
-                Err(_) => panic!("Bad record!"),
-                Ok(record) => find_v::parse_one(record.seq(), &reference_seqs, true, edit_dist),
-            })
-            .collect_into_vec(&mut outs);
-
-        for out in outs {
-            match out {
-                None => {}
-                Some((ref_v, _)) => {
-                    let new_size = match map.get(&ref_v) {
-                        Some(size) => size + 1,
-                        None => 1,
-                    };
-                    map.insert(ref_v, new_size);
-                }
+                map.insert(ref_v, new_size);
             }
-        }
-    }
+        },
+        &mut map,
+        Some(args.sample_size)
+    );
 
     let sorted_map = map
-        .into_iter()
+        .iter()
         .sorted_by(|(_, edit_a), (_, edit_b)| edit_a.cmp(edit_b))
-        .rev()
-        .collect_vec();
+        .map(|(ref_v, _)| ref_v.clone())
+        .rev();
 
-    for (k, v) in &sorted_map {
-        println!("{},{}", k.name, v);
+    let best = sorted_map.clone()
+        .take(args.reference_size);
+    let rest = sorted_map.clone()
+        .dropping(args.reference_size);
+    
+    (best.collect(), rest.collect())
+}
+
+
+#[cfg(test)]
+pub(crate) mod tests {
+    use super::*;
+    #[test]
+    fn test_translate() {
+        assert_eq!(translate(b"TGGGGCCAGGGGACCCAGGTCACCGTC"), "WGQGTQVTV")
     }
-
-    // convert the map into a sorted list
-    let mut best = sorted_map
-        .into_iter()
-        .map(|(ref_v, _edit_dist)| ref_v)
-        .collect_vec();
-
-    let mut rest = reference_seqs
-        .into_iter()
-        .filter(|&a| -> bool { best.contains(a) })
-        .map(|a| a.to_owned())
-        .collect_vec();
-
-    best.append(&mut rest);
-
-    // best
-    (
-        best.clone().into_iter().take(reference_size).collect_vec(),
-        best.into_iter().dropping(reference_size).collect_vec(),
-    )
 }
