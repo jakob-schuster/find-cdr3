@@ -12,7 +12,7 @@ mod util;
 
 #[derive(Parser,Debug)]
 pub struct Args {
-    /// Input fasta file of immunoglobin sequences. Reads from stdin if none is provided.
+    /// Input fasta/fastq file of immunoglobin sequences. Reads from stdin if none is provided.
     #[arg(short, long, default_value_t = String::from("stdin"))]
     input_reads: String,
 
@@ -26,13 +26,17 @@ pub struct Args {
     #[arg(long, default_value_t = 10000)]
     sample_size: usize,
     
-    /// Number of top V-gene sequences to actually search for. The less you use, the quicker the program, but also the less accurate.
+    /// Number of top V-gene sequences to actually search for. The less you use, the quicker the program.
     #[arg(long, default_value_t = 5)]
     reference_size: usize,
     
+    /// Number of threads to use for parallel processing.
+    #[arg(long, short='t', default_value_t = 1)]
+    threads: usize,
     /// Size of each chunk of reads to process in parallel.
     #[arg(long, short='c', default_value_t = 300000)]
     parallel_chunk_size: usize,
+    
     /// Edit distance used for reference sequences.
     #[arg(short, long, default_value_t = 20)]
     edit_dist: u8,
@@ -55,7 +59,7 @@ mod output {
 
     /// Prints the header to an output.
     pub fn print_header<T: Write>(output: &mut T) {
-        writeln!(output, "id\tv_gene\tsequence\tcdr3_sequence\ttranslated_sequence")
+        writeln!(output, "id\tfull_sequence\tv_gene\tcdr3_sequence\ttranslated_sequence")
             .expect("Couldn't write header line to output!");
     }
     
@@ -86,6 +90,10 @@ fn main() {
     // get the arguments from the command line
     let args = Args::parse();
 
+    // ONLY do this once
+    rayon::ThreadPoolBuilder::new().num_threads(args.threads).build_global().unwrap();
+
+
     // collect all the reference seqs
     let reference_seqs = reference::parse_reference(&args.reference_fasta);
 
@@ -108,6 +116,7 @@ fn main() {
     let reader = input::Reader::new(
         &args.input_reads, 
         args.parallel_chunk_size, 
+        args.threads, 
         None
     ).unwrap();
 

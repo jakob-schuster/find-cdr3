@@ -152,6 +152,7 @@ pub fn optimise_refs(
     let reader = crate::input::Reader::new(
         &args.input_reads, 
         args.parallel_chunk_size, 
+        args.threads,
         Some(args.sample_size)
     ).unwrap();
     

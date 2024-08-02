@@ -12,18 +12,20 @@ Provide `find-cdr3` with an input fasta, a reference fasta, and an output destin
 Usage: find-cdr3 [OPTIONS] --reference-fasta <REFERENCE_FASTA>
 
 Options:
-  -i, --input-fasta <INPUT_FASTA>
-          Input fasta file. Reads from stdin if none is provided [default: stdin]
+  -i, --input-reads <INPUT_READS>
+          Input fasta/fastq file of immunoglobin sequences. Reads from stdin if none is provided [default: stdin]
   -r, --reference-fasta <REFERENCE_FASTA>
-          Reference fasta of V-gene sequences. The Cys codon near the end of the V-gene sequence marks the start of the CDR3
+          Reference fasta of different V-gene sequences. The Cys codon near the end of the V-gene sequence marks the start of the CDR3
   -o, --output-tsv <OUTPUT_TSV>
           Output TSV file of reads and their CDR3s. Writes to stdout if none is provided [default: stdout]
       --sample-size <SAMPLE_SIZE>
-          Size of pre-processing sample, pre-processed to find the most common reference sequences. Not used currently [default: 10000]
+          Size of pre-processing sample, pre-processed to find the most common reference sequences [default: 10000]
       --reference-size <REFERENCE_SIZE>
-          Number of top V-gene sequences to actually search for. The less you use, the quicker the program, but also the less accurate [default: 20]
+          Number of top V-gene sequences to actually search for. The less you use, the quicker the program, but also the less accurate [default: 5]
+  -t, --threads <THREADS>
+          Number of threads to use for parallel processing [default: 1]
   -c, --parallel-chunk-size <PARALLEL_CHUNK_SIZE>
-          Size of each chunk of reads to process in parallel [default: 500000]
+          Size of each chunk of reads to process in parallel [default: 300000]
   -e, --edit-dist <EDIT_DIST>
           Edit distance used for reference sequences [default: 20]
   -f, --fr4 <FR4>
@@ -36,7 +38,7 @@ Options:
 
 ## 🔩 Implementation
 
-The `rust-bio` crate was used. All alignment is done using Myers bit-vector algorithm.
+The `rust-bio` crate was used for parsing and matching patterns in reads. All alignment is done using Myers bit-vector algorithm.
 
 ### Preprocessing
 
@@ -46,9 +48,16 @@ Since there are often hundreds of reference V-genes of which only a few will be 
 
 ### Processing
 
-The input file `input-fasta` is parsed. `parallel-chunk-size` reads are processed, using as many threads as are available, and then the results are written to an output file by one thread, before the next chunk is handled. 
+The input file `input-reads` is parsed. `parallel-chunk-size` reads are processed, using `threads` threads, and then the results are written to an output file by one thread, before the next chunk is handled. 
 
-Each read is scanned for a V-gene match allowing for `edit-dist` mismatches. Then, based on the position of the Cys codon in the reference sequence and the path of alignment between the reference sequence and the read, the location of the Cys codon within the read is calculated. Then, the FR4 (`fr4`) region is located, allowing for `edit-dist` mismatches. If both the V-gene and the FR4 region could be found, the region from the Cys codon to the start of the FR4 is taken as the CDR3, and extracted. The read ID, the full sequence, and the CDR3 are written to the output file.
+Each read is scanned for a V-gene match allowing for `edit-dist` mismatches, selecting the one with the fewest mismatches. Then, based on the position of the Cys codon in the reference sequence and the path of alignment between the reference sequence and the read, the location of the Cys codon within the read is calculated. Then, the FR4 (`fr4`) region is located, allowing for `edit-dist` mismatches. If both the V-gene and the FR4 region could be found, the region from the Cys codon to the start of the FR4 is taken as the CDR3, and extracted. 
+
+For each read, the TSV output file contains: 
+- The read ID
+- The full sequence of the read 
+- The name of the V-gene 
+- The CDR3 sequence 
+- The translated amino acid sequence spanning from the start of the V-gene to the end of the FR4
 
 ## 🗺 Todo
 
