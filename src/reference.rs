@@ -161,12 +161,12 @@ pub fn optimise_refs(
         },
         |opt, map: &mut HashMap<RefV, usize>| {
             if let Some((ref_v, _)) = opt {
-                let new_size = match map.get(&ref_v) {
+                let new_size = match map.get(ref_v) {
                     Some(size) => size + 1,
                     None => 1
                 };
 
-                map.insert(ref_v, new_size);
+                map.insert(ref_v.clone(), new_size);
             }
         },
         &mut map

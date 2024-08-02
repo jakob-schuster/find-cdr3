@@ -30,6 +30,7 @@ impl <'a>Read<'a> {
         match self {
             Read::SeqIOFasta(fasta) => fasta.id().ok().unwrap_or(""),
             Read::SeqIOFastq(fastq) => fastq.id().ok().unwrap_or(""),
+
             Read::BioFasta(fasta) => fasta.id(),
             Read::BioFastq(fastq) => fastq.id(),
         }
@@ -39,32 +40,103 @@ impl <'a>Read<'a> {
 /// A reader for input files, taking either Fastq or Fasta files.
 /// Currently, only the rust-bio parser backend is used.
 pub enum Reader {
-    BioFasta(Box<dyn BufRead>, usize, Option<usize>),
-    BioFastq(Box<dyn BufRead>, usize, Option<usize>),
+    BioFasta {
+        bufread: Box<dyn BufRead>, 
+        chunk_size: usize, 
+        take_first: Option<usize>
+    },
+    BioFastq { 
+        bufread: Box<dyn BufRead>, 
+        chunk_size: usize, 
+        take_first: Option<usize> 
+    },
+    NonGzippedSeqIOFastq { 
+        filename: String, 
+        threads: u32, 
+    },
+    NonGzippedSeqIOFasta { 
+        filename: String, 
+        threads: u32, 
+    },
 }
 
 impl Reader {
+    pub fn new(
+        filename: &str, 
+        chunk_size: usize, 
+        take_first: Option<usize>
+    ) -> Result<Reader, InputError> {
+        Self::new_bio(filename, chunk_size, take_first)
+    }
+    
     /// Creates a new reader, given the filename, 
     /// the size of each parallel-processed chunk of reads, 
     /// and the option to only take the first n reads.
-    pub fn new(
+    /// Always just uses the bio reader.
+    fn new_bio(
         filename: &str, 
-        parallel_chunk_size: usize, 
+        chunk_size: usize, 
         take_first: Option<usize>
     ) -> Result<Reader, InputError> {
         let (filetype, bufread) = reader(filename)?;
 
-        // just use bio parsers for now; can't use seq_io in parallel on gzipped files
-        Ok(match filetype {
-            FileType::Fasta => Reader::BioFasta(bufread, parallel_chunk_size, take_first),
-            FileType::Fastq => Reader::BioFastq(bufread, parallel_chunk_size, take_first),
+        Ok(match filetype.inner() {
+            RawFileType::Fasta => Reader::BioFasta { 
+                bufread, chunk_size, take_first 
+            },
+            RawFileType::Fastq => Reader::BioFastq { 
+                bufread, chunk_size, take_first 
+            },
+        })
+    }
+
+    /// Creates a new reader, given the filename, 
+    /// the size of each parallel-processed chunk of reads, 
+    /// and the option to only take the first n reads.
+    /// Chooses between a seq_io reader, and a bio reader,
+    /// based on whether the file is gzipped or not
+    /// (gzipped parallel processing is not compatible with
+    /// seq_io). This was ditched because it turns out there's no real performance difference.
+    fn new_choose(
+        filename: &str, 
+        chunk_size: usize, 
+        take_first: Option<usize>
+    ) -> Result<Reader, InputError> {
+        let (filetype, bufread) = reader(filename)?;
+
+        Ok(match take_first {
+                // if we're taking just the first reads, always use bio
+            Some(_) => Self::new_bio(filename, chunk_size, take_first)?,
+            None => {
+                // otherwise, choose intelligently
+                match filetype {
+                    // if not gzipped, we can use seq_io
+                    FileType::Raw(raw) => match raw {
+                        RawFileType::Fasta => Reader::NonGzippedSeqIOFasta {
+                            filename: filename.to_string(), threads: 16
+                        },
+                        RawFileType::Fastq => Reader::NonGzippedSeqIOFastq {
+                            filename: filename.to_string(), threads: 16 
+                        },
+                    },
+
+                    // otherwise, have to use bio
+                    FileType::Gzipped(_) => 
+                        Self::new_bio(filename, chunk_size, take_first)?,
+                }
+            },
         })
     }
 
     /// Maps a function across all the reads in the input.
-    pub fn map<T: Send, R>(self, local_fn: impl Fn(Read) -> T + Sync, global_fn: impl Fn(T, &mut R), global_data: &mut R) {
+    pub fn map<T: Send + Default, R>(
+        self, 
+        local_fn: impl Fn(Read) -> T + Sync, 
+        global_fn: impl Fn(&T, &mut R), 
+        global_data: &mut R
+    ) {
         match self {
-            Reader::BioFasta(bufread, chunk_size, take_first) => {
+            Reader::BioFasta { bufread, chunk_size, take_first } => {
                 let input_records = bio::io::fasta::Reader::from_bufread(bufread)
                     .records();
 
@@ -86,12 +158,12 @@ impl Reader {
                     }).collect_into_vec(&mut outs);
     
                     for t in outs {
-                        global_fn(t, global_data)
+                        global_fn(&t, global_data)
                     }
                 }
             },
 
-            Reader::BioFastq(bufread, chunk_size, take_first) => {
+            Reader::BioFastq { bufread, chunk_size, take_first } => {
                 let input_records = bio::io::fastq::Reader::from_bufread(bufread)
                     .records();
     
@@ -113,17 +185,41 @@ impl Reader {
                     }).collect_into_vec(&mut outs);
     
                     for t in outs {
-                        global_fn(t, global_data)
+                        global_fn(&t, global_data)
                     }
                 }
             },
-        };
-        
 
+            Reader::NonGzippedSeqIOFasta { filename, threads } => {
+                let input_records = seq_io::fasta::Reader::from_path(filename)
+                    .unwrap();
+
+                seq_io::parallel::parallel_fasta(input_records, threads, 10, 
+                    |rec, out| *out = local_fn(Read::SeqIOFasta(rec)), 
+                    |_, out| {
+                        global_fn(out, global_data);
+                        Some(())
+                    }
+                ).unwrap();
+            }
+
+            Reader::NonGzippedSeqIOFastq { filename, threads } => {
+                let input_records = seq_io::fastq::Reader::from_path(filename)
+                    .unwrap();
+
+                seq_io::parallel::parallel_fastq(input_records, threads, 10, 
+                    |rec, out| *out = local_fn(Read::SeqIOFastq(rec)), 
+                    |_, out| {
+                        global_fn(out, global_data);
+                        Some(())
+                    }
+                ).unwrap();
+            },
+        };
     }
 }
 
-use std::{ffi::OsStr, fs::File, io::{stdin, BufRead, BufReader}, path::Path, rc::Rc};
+use std::{fs::File, io::{stdin, BufRead, BufReader}, path::Path};
 use itertools::Itertools;
 
 #[derive(Debug)]
@@ -132,20 +228,33 @@ pub enum FileTypeError {
 }
 
 pub enum FileType {
+    Raw(RawFileType),
+    Gzipped(RawFileType),
+}
+impl FileType {
+    fn inner(&self) -> &RawFileType {
+        match self {
+            FileType::Raw(r) => r,
+            FileType::Gzipped(r) => r,
+        }
+    }
+}
+
+pub enum RawFileType {
     Fasta,
     Fastq
 }
 
-impl TryFrom<&str> for FileType {
+impl TryFrom<&str> for RawFileType {
     type Error = FileTypeError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
-            "fa" => Ok(FileType::Fasta),
-            "fasta" => Ok(FileType::Fasta),
+            "fa" => Ok(RawFileType::Fasta),
+            "fasta" => Ok(RawFileType::Fasta),
 
-            "fq" => Ok(FileType::Fastq),
-            "fastq" => Ok(FileType::Fastq),
+            "fq" => Ok(RawFileType::Fastq),
+            "fastq" => Ok(RawFileType::Fastq),
 
             _ => Err(FileTypeError::UnknownFileType),
         }
@@ -164,7 +273,7 @@ pub enum InputError {
 fn reader(input_file: &str) -> Result<(FileType, Box<dyn BufRead>), InputError> {
     if input_file.eq("stdin") {
         // just read straight from stdin
-        Ok((FileType::Fasta, Box::new(BufReader::new(stdin()))))
+        Ok((FileType::Raw(RawFileType::Fasta), Box::new(BufReader::new(stdin()))))
     } else {
         let path = Path::new(&input_file);
 
@@ -173,18 +282,18 @@ fn reader(input_file: &str) -> Result<(FileType, Box<dyn BufRead>), InputError> 
         
         match &input_file.split('.').collect_vec()[..] {
             [.., ext, "gz"] =>
-                match FileType::try_from(*ext) {
+                match RawFileType::try_from(*ext) {
                     Ok(filetype) => 
-                        Ok((filetype, Box::new(
+                        Ok((FileType::Gzipped(filetype), Box::new(
                             BufReader::new(flate2::read::MultiGzDecoder::new(file))))),
                     Err(err) => 
                         Err(InputError::FileTypeError(err)),
                 },
             
             [.., ext] =>
-                match FileType::try_from(*ext) {
+                match RawFileType::try_from(*ext) {
                     Ok(filetype) => 
-                        Ok((filetype, Box::new(
+                        Ok((FileType::Gzipped(filetype), Box::new(
                             BufReader::new(file)))),
                     Err(err) => 
                         Err(InputError::FileTypeError(err)),

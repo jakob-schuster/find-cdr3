@@ -1,17 +1,14 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
+use std::fmt::Debug;
+use std::io::Write;
 
 use bio::{pattern_matching::myers::Myers, alignment::AlignmentOperation};
-use clap::builder::Str;
 use clap::Parser;
-use itertools::Itertools;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
-use reference::RefV;
-use seq_io::parallel::parallel_fasta;
 
 mod reference;
 mod find_cdr3;
 mod find_v;
+mod util;
 
 #[derive(Parser,Debug)]
 pub struct Args {
@@ -123,7 +120,7 @@ fn main() {
                 &best_reference_seqs,
                 args.edit_dist, 
                 &fr4
-            )
+            ).fmt_seq()
         ),
         |out_string, output_csv_file| {
             writeln!(output_csv_file, "{out_string}")

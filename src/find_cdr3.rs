@@ -1,14 +1,14 @@
-use core::fmt;
-use std::{cmp, fmt::Display};
+use std::cmp;
 
-use bio::{pattern_matching::myers::Myers, alignment::{AlignmentOperation, Alignment}};
+use bio::{pattern_matching::myers::Myers, alignment::Alignment};
 use input::Read;
 use itertools::Itertools;
+use util::Ran;
 
 use crate::reference;
 use super::*;
 
-/// A single result of the parse_read computation.
+/// A single result of the `parse_read` computation.
 /// Contains all the information we want to extract,
 /// and all the types of read we categorise.
 #[derive(Default, Debug)]
@@ -20,27 +20,26 @@ pub enum OutputRecord {
     Both
 }
 
-impl Display for OutputRecord {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl OutputRecord {
+    pub fn fmt_seq(&self) -> String {
         match self {
             OutputRecord::Neither => 
-                write!(f, "\t\t\t"),
+                String::from("\t\t\t"),
             OutputRecord::Forward(name, cdr3, full_seq) =>
-                write!(f, "{}\t{}\t{}",
+                format!("{}\t{}\t{}",
                     name,
                     std::str::from_utf8(cdr3).unwrap(),
-                    // std::str::from_utf8(full_seq).unwrap(),
-                    crate::reference::translate(full_seq)
+                    crate::reference::translate(full_seq),
                 ),
             OutputRecord::Reverse(name, cdr3, full_seq) =>
-                write!(f, "{}\t{}\t{}",
+                format!("{}\t{}\t{}",
                     name,
                     std::str::from_utf8(cdr3).unwrap(),
-                    // std::str::from_utf8(full_seq).unwrap(),
-                    crate::reference::translate(full_seq)
+                    crate::reference::translate(full_seq),
+                    // crate::reference::translate(&seq[full_seq.start..full_seq.end])
                 ),
             OutputRecord::Both =>
-                write!(f, "\t\t\t"),
+                String::from("\t\t\t"),
         }
     }
 }
@@ -72,7 +71,9 @@ pub fn parse_read(
 
         // reverse was successful
         [None, Some((name, rev_seq_cdr3, rev_full_seq))] => 
-            OutputRecord::Reverse(name.clone(), rev_seq_cdr3.clone(), rev_full_seq.clone()),
+            OutputRecord::Reverse(
+                name.clone(), rev_seq_cdr3.clone(), rev_full_seq.clone()
+            ),
 
         // both were successful - ambiguous
         [Some(_), Some(_)] => OutputRecord::Both,
@@ -84,7 +85,10 @@ pub fn parse_read(
 /// Searches through a single sequence, trying to find and extract the cdr3
 /// region. 
 fn find_cdr3(
-    seq: &[u8], reference_seqs: &[reference::RefV], edit_dist: u8, fr4: &Myers::<u64>
+    seq: &[u8], 
+    reference_seqs: &[reference::RefV], 
+    edit_dist: u8, 
+    fr4: &Myers::<u64>
 ) -> Option<(String, Vec<u8>, Vec<u8>)> {
     // first map to all the variable regions. get the best match (compare by edit dist)
     let v_matches = reference_seqs.iter()
@@ -128,7 +132,11 @@ fn find_cdr3(
             .min_by_key(|&(_, _, dist)| dist)?;
         let fr4_start = best_fr4_start + cys_end_seq;
         
-        Some((v_name.clone(), Vec::from(&seq[cys_end_seq..fr4_start]), Vec::from(&seq[best_aln.ystart..best_fr4_end + cys_end_seq])))
+        Some((
+            v_name.clone(), 
+            Vec::from(&seq[cys_end_seq..fr4_start]), 
+            Vec::from(&seq[best_aln.ystart..best_fr4_end + cys_end_seq])
+        ))
     }
 }
 
