@@ -102,12 +102,11 @@ pub fn translate(seq: &[u8]) -> String {
 /// Finds the last Cys codon in a sequence.
 fn last_cys(seq: &[u8]) -> Option<usize> {
     let proteins = translate(seq);
-    proteins.rfind('C')
-        .map(|a| a * 3)
+    proteins.rfind('C').map(|a| a * 3)
 }
 
-/// Parses the reference. Each reference sequence is trucated to <=64 
-/// characters to fit in a rust-bio Myers bit-vector (adjusted to 
+/// Parses the reference. Each reference sequence is trucated to <=64
+/// characters to fit in a rust-bio Myers bit-vector (adjusted to
 /// be in the correct coding frame). The position of the last Cys
 /// codon is also found and recorded.
 pub fn parse_reference(reference_fasta: &str) -> Vec<RefV> {
@@ -119,8 +118,7 @@ pub fn parse_reference(reference_fasta: &str) -> Vec<RefV> {
         .records()
         .map(|result| match result {
             Ok(record) => {
-                let seq = record.seq()
-                    .to_ascii_uppercase();
+                let seq = record.seq().to_ascii_uppercase();
 
                 let short_seq_len = 64;
                 let reading_frame = (seq.len() - short_seq_len) % 3;
@@ -142,35 +140,31 @@ pub fn parse_reference(reference_fasta: &str) -> Vec<RefV> {
 
 /// Takes a sample of the input, finding the reference_size most common V genes
 /// and dropping the rest.
-pub fn optimise_refs(
-    reference_seqs: &Vec<RefV>,
-    args: &Args,
-) -> (Vec<RefV>, Vec<RefV>) {
+pub fn optimise_refs(reference_seqs: &Vec<RefV>, args: &Args) -> (Vec<RefV>, Vec<RefV>) {
     // go through the records populating a counts map
     let mut map: HashMap<RefV, usize> = HashMap::new();
 
     let reader = crate::input::Reader::new(
-        &args.input_reads, 
-        args.parallel_chunk_size, 
+        &args.input_reads,
+        args.parallel_chunk_size,
         args.threads,
-        Some(args.sample_size)
-    ).unwrap();
-    
+        Some(args.sample_size),
+    )
+    .unwrap();
+
     reader.map(
-        |read| {
-            find_v::parse_one(read.seq(), reference_seqs, true, args.edit_dist)
-        },
+        |read| find_v::parse_one(read.seq(), reference_seqs, true, args.edit_dist),
         |opt, map: &mut HashMap<RefV, usize>| {
             if let Some((ref_v, _)) = opt {
                 let new_size = match map.get(ref_v) {
                     Some(size) => size + 1,
-                    None => 1
+                    None => 1,
                 };
 
                 map.insert(ref_v.clone(), new_size);
             }
         },
-        &mut map
+        &mut map,
     );
 
     // sort the map to find the best V genes
@@ -181,14 +175,11 @@ pub fn optimise_refs(
         .rev();
 
     // only take the best reference_size results
-    let best = sorted_map.clone()
-        .take(args.reference_size);
-    let rest = sorted_map.clone()
-        .dropping(args.reference_size);
-    
+    let best = sorted_map.clone().take(args.reference_size);
+    let rest = sorted_map.clone().dropping(args.reference_size);
+
     (best.collect(), rest.collect())
 }
-
 
 #[cfg(test)]
 pub(crate) mod tests {
